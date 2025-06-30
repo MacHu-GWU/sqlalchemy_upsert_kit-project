@@ -14,6 +14,7 @@ import sqlalchemy.orm as orm
 import sqlalchemy_mate.pt as pt
 from sqlalchemy_upsert_kit.paths import dir_project_root
 from sqlalchemy_upsert_kit.tests.data import (
+    get_utc_now,
     Base,
     Record,
     t_record,
@@ -341,9 +342,11 @@ def test_long_transaction(
         with pytest.raises(UpsertTestError):
             with engine.connect() as conn:
                 with conn.begin() as trans:
+                    # Insert initial records with proper timestamps
+                    now = get_utc_now()
                     values = [
-                        Record(id=6, desc="v1").to_dict(),
-                        Record(id=7, desc="v1").to_dict(),
+                        {"id": 6, "desc": "v1", "create_at": now, "update_at": now},
+                        {"id": 7, "desc": "v1", "create_at": now, "update_at": now},
                     ]
                     conn.execute(t_record.insert(), values)
 
@@ -357,14 +360,18 @@ def test_long_transaction(
                         **kwargs,
                     )
 
+                    # Insert more records after upsert
                     values = [
-                        Record(id=8, desc="v1").to_dict(),
-                        Record(id=9, desc="v1").to_dict(),
+                        {"id": 8, "desc": "v1", "create_at": now, "update_at": now},
+                        {"id": 9, "desc": "v1", "create_at": now, "update_at": now},
                     ]
                     conn.execute(t_record.insert(), values)
+                    
                     if flag_name == "_raise_on_post_operation":
-                        raise ValueError("Simulated error in post-operation")
-                    trans.commit()
+                        raise UpsertTestError("Simulated error in post-operation")
+                    
+                    # Note: trans.commit() should not be called in user-managed mode
+                    # The transaction should be managed externally
 
         data_faker.check_no_temp_tables(engine)
         data_faker.check_rollback(engine)
