@@ -14,20 +14,18 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 import sqlalchemy.orm as orm
 
-__version__ = "0.1.1"
-__author__ = "Sanhe Hu"
-
 
 class UpsertTestError(Exception):
     """
     Custom exception raised during testing to simulate failures.
-    
+
     This exception is used exclusively for testing error handling and cleanup
     behavior in upsert operations. It allows tests to inject failures at specific
     points in the operation flow to verify proper rollback and cleanup.
-    
+
     :param message: Descriptive error message indicating where the failure occurred
     """
+
     pass
 
 
@@ -57,7 +55,7 @@ def get_pk_name(table: sa.Table) -> str:
         'id'
     """
     pks = list(table.primary_key)
-    if len(pks) != 1:
+    if len(pks) != 1:  # pragma: no cover
         pk_names = [pk.name for pk in pks]
         raise ValueError(
             f"Table must have exactly one primary key, but found: {pk_names}"
@@ -284,7 +282,7 @@ def insert_or_ignore(
 
     **Example**:
         Target table has records with id=1,2,3::
-        
+
             new_data = [
                 {'id': 2, 'name': 'Bob'},      # Exists - will be ignored
                 {'id': 4, 'name': 'Charlie'},  # New - will be inserted
@@ -298,12 +296,17 @@ def insert_or_ignore(
         This method (100K records): ~8 seconds
         Performance gain: ~5.6x faster
     """
-    # ensure:
-    # either engine is provided and conn, trans are None
-    # either engine, conn, trans are all provided
-
     if not values:
         return 0, 0  # No-op for empty data
+
+    # Validate parameter combinations
+    user_managed = conn is not None and trans is not None
+    auto_managed = conn is None and trans is None
+
+    if not (user_managed or auto_managed):  # pragma: no cover
+        raise ValueError(
+            "Either both conn and trans must be provided, or both must be None"
+        )
 
     # Use separate metadata for clean isolation
     if metadata is None:
@@ -319,74 +322,106 @@ def insert_or_ignore(
     inserted_rows = 0
     temp_table_created = False
 
-    with engine.connect() as conn:
-        with conn.begin() as trans:
-            try:
-                # Step 1: Create temporary staging table
-                if _raise_on_temp_table_create:
-                    raise UpsertTestError("error on temp table creation")
-                temp_table.create(conn)
-                temp_table_created = True
-                
-                # Step 2: Load all candidate records into staging area
-                if _raise_on_temp_data_insert:
-                    raise UpsertTestError("error on temp data insertion")
-                conn.execute(temp_table.insert(), values)
-                
-                # Step 3: Insert only records that don't exist in target table
-                # Uses LEFT JOIN to find non-matching records (efficient set operation)
-                if _raise_on_target_insert:
-                    raise UpsertTestError("error on target insertion")
-                stmt = table.insert().from_select(
-                    list(temp_table.columns.keys()),
-                    sa.select(temp_table)
-                    .select_from(
-                        temp_table.outerjoin(  # LEFT JOIN to find non-matches
-                            table,
-                            temp_table.c[pk_name] == table.c[pk_name],
-                        )
+    def _execute_upsert_logic(
+        connection: sa.Connection,
+        transaction: sa.Transaction,
+    ):
+        """Execute the core upsert logic."""
+        nonlocal temp_table_created, ignored_rows, inserted_rows
+
+        try:
+            # Step 1: Create temporary staging table
+            if _raise_on_temp_table_create:
+                raise UpsertTestError("error on temp table creation")
+            temp_table.create(connection)
+            temp_table_created = True
+
+            # Step 2: Load all candidate records into staging area
+            if _raise_on_temp_data_insert:
+                raise UpsertTestError("error on temp data insertion")
+            connection.execute(temp_table.insert(), values)
+
+            # Step 3: Insert only records that don't exist in target table
+            # Uses LEFT JOIN to find non-matching records (efficient set operation)
+            if _raise_on_target_insert:
+                raise UpsertTestError("error on target insertion")
+            stmt = table.insert().from_select(
+                list(temp_table.columns.keys()),
+                sa.select(temp_table)
+                .select_from(
+                    temp_table.outerjoin(  # LEFT JOIN to find non-matches
+                        table,
+                        temp_table.c[pk_name] == table.c[pk_name],
                     )
-                    .where(
-                        table.c[pk_name].is_(None)
-                    ),  # Only where target PK is NULL (no match)
                 )
-                res = conn.execute(stmt)
+                .where(
+                    table.c[pk_name].is_(None)
+                ),  # Only where target PK is NULL (no match)
+            )
+            res = connection.execute(stmt)
+            try:
+                inserted_rows = res.rowcount if res.rowcount is not None else 0
+                ignored_rows = len(values) - inserted_rows
+            except:  # pragma: no cover
+                inserted_rows = 0
+                ignored_rows = len(values)
+
+            # Step 4: Clean up temporary table in success path
+            if temp_table_created:
+                if _raise_on_temp_table_drop:
+                    raise UpsertTestError("error on temp table cleanup")
+                # Normal cleanup - drop the temp table
+                temp_table.drop(connection)
+                metadata.remove(temp_table)
+                temp_table_created = False
+
+            return ignored_rows, inserted_rows
+
+        except Exception as e:
+            # Step 4: Handle temp table cleanup flag testing
+            if temp_table_created and _raise_on_temp_table_drop:
+                # If we're testing temp table drop errors, raise that instead
+                raise UpsertTestError("error on temp table cleanup")
+            # Re-raise the original exception - cleanup will be handled by the caller
+            raise e
+
+    def _cleanup_temp_table():
+        """Clean up temporary table if it still exists."""
+        if temp_table_created:
+            try:
+                # Use a fresh connection for cleanup to avoid issues with rolled-back transactions
+                with engine.connect() as cleanup_conn:
+                    temp_table.drop(cleanup_conn)
+                    cleanup_conn.commit()
+                metadata.remove(temp_table)
+            except Exception as cleanup_error:
+                # In rare cases, temp table might not exist or cleanup might fail
+                # This should not mask the original exception
                 try:
-                    inserted_rows = res.rowcount if res.rowcount is not None else 0
-                    ignored_rows = len(values) - inserted_rows
-                except:  # pragma: no cover
-                    inserted_rows = 0
-                    ignored_rows = len(values)
-                
-                # Step 4: Clean up temporary table
-                if temp_table_created:
-                    if _raise_on_temp_table_drop:
-                        raise UpsertTestError("error on temp table cleanup")
-                    temp_table.drop(conn)
+                    # Try to remove from metadata anyway
                     metadata.remove(temp_table)
-                    temp_table_created = False
-                
-                # Commit transaction
-                trans.commit()
-                return ignored_rows, inserted_rows
-                
-            except Exception as e:
-                # Rollback transaction on any error
-                trans.rollback()
-                
-                # Re-raise the original exception
-                raise e
-            
-            finally:
-                # Ensure temp table cleanup even on rollback
-                # NOTE: In SQLite, DDL operations (CREATE/DROP TABLE) are not transactional
-                # So we need to clean up temp tables regardless of transaction outcome
-                if temp_table_created:
-                    try:
-                        # Use a fresh connection for cleanup to avoid issues with rolled-back transactions
-                        with engine.connect() as cleanup_conn:
-                            temp_table.drop(cleanup_conn)
-                            cleanup_conn.commit()
-                        metadata.remove(temp_table)
-                    except Exception:
-                        pass  # Don't mask original exceptions with cleanup errors
+                except Exception:  # pragma: no cover
+                    pass
+
+    if user_managed:
+        # User-managed transaction mode: use provided connection and transaction
+        try:
+            return _execute_upsert_logic(conn, trans)
+        except Exception:
+            # Clean up temp table but don't rollback - user manages the transaction
+            _cleanup_temp_table()
+            raise
+    else:
+        # Self-managed transaction mode: create our own connection and transaction
+        try:
+            with engine.connect() as connection:
+                with connection.begin() as transaction:
+                    result = _execute_upsert_logic(connection, transaction)
+                    # Transaction is automatically committed by context manager
+                    return result
+                    # No need for cleanup here - if we reach this point, cleanup was already done in _execute_upsert_logic
+        except Exception as e:
+            # Transaction is automatically rolled back by context manager
+            # At this point all connections are closed, so we can safely clean up temp tables
+            _cleanup_temp_table()
+            raise e
