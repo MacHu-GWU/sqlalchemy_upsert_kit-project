@@ -10,13 +10,11 @@ from sqlalchemy_upsert_kit.sqlite import (
 
 import pytest
 import sqlalchemy as sa
-import sqlalchemy.orm as orm
 import sqlalchemy_mate.pt as pt
 from sqlalchemy_upsert_kit.paths import dir_project_root
 from sqlalchemy_upsert_kit.tests.data import (
     get_utc_now,
     Base,
-    Record,
     t_record,
     DataFaker,
 )
@@ -366,18 +364,15 @@ def test_long_transaction(
                         {"id": 9, "desc": "v1", "create_at": now, "update_at": now},
                     ]
                     conn.execute(t_record.insert(), values)
-                    
+
                     if flag_name == "_raise_on_post_operation":
                         raise UpsertTestError("Simulated error in post-operation")
-                    
+
                     # Note: trans.commit() should not be called in user-managed mode
                     # The transaction should be managed externally
 
         data_faker.check_no_temp_tables(engine)
         data_faker.check_rollback(engine)
-
-
-
 
 
 if __name__ == "__main__":
