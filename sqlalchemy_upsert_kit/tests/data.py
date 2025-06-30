@@ -1,5 +1,16 @@
 # -*- coding: utf-8 -*-
 
+"""
+Test Data Models and Utilities
+
+This module provides SQLAlchemy models, test data generation utilities, and helper
+functions for testing upsert operations. It defines database schemas and creates
+fake data scenarios that simulate real-world upsert conflicts and incremental data.
+
+The module is designed to support comprehensive testing of database upsert operations
+by providing controlled test datasets with predictable conflict patterns.
+"""
+
 import typing as T
 import dataclasses
 import random
@@ -11,9 +22,21 @@ import sqlalchemy.orm as orm
 
 
 class Base(orm.DeclarativeBase):
+    """
+    Base class for all SQLAlchemy models in the test suite.
+
+    Provides common functionality for converting model instances to dictionary
+    representations, which is useful for assertions and data comparison in tests.
+    """
+
     def to_dict(self):
         """
         Convert a model instance to dictionary representation.
+
+        Extracts all column values from the model instance and returns them
+        as a dictionary with column names as keys.
+
+        :returns: Dictionary mapping column names to their values
         """
         return dict(
             [(c.name, getattr(self, c.name, None)) for c in self.__table__.columns]
@@ -21,6 +44,28 @@ class Base(orm.DeclarativeBase):
 
 
 class Record(Base):
+    """
+    Test database model representing a record with timestamps.
+
+    This model is used throughout the test suite to simulate real-world database
+    operations including upserts, conflicts, and incremental data updates.
+
+    :param id: Primary key identifier for the record
+    :param desc: Optional description field that changes between versions
+    :param create_at: Timestamp when the record was initially created
+    :param update_at: Timestamp when the record was last modified
+
+    Example:
+        Record used in upsert testing::
+
+            {
+                "id": 1,
+                "desc": "v1",
+                "create_at": "2024-01-01T10:00:00Z",
+                "update_at": "2024-01-01T10:01:00Z"
+            }
+    """
+
     __tablename__ = "records"
 
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
@@ -38,21 +83,56 @@ class Record(Base):
 t_record: sa.Table = Record.__table__
 
 
-def prepare_existing_records(engine: sa.Engine):
-    """
-    Prepare existing records for testing.
-    """
-    with engine.connect() as conn:
-        conn.execute(Record.__table__.insert(), existing_records)
-        conn.commit()
-
-
 def get_utc_now() -> datetime:
+    """
+    Get the current UTC timestamp.
+
+    :returns: Current datetime in UTC timezone
+    """
     return datetime.now(timezone.utc)
 
 
 @dataclasses.dataclass
 class DataFaker:
+    """
+    Test data generator for upsert operation testing.
+
+    Creates controlled test datasets with predictable patterns of existing data,
+    new data, and conflicts between them. This enables comprehensive testing of
+    upsert behaviors including conflict resolution and incremental data insertion.
+
+    The data generator creates three categories of records:
+
+    1. **Existing Records**: Already present in the database
+    2. **Conflict Records**: Input records that conflict with existing ones
+    3. **Incremental Records**: New records that don't conflict with existing data
+
+    :param n_existing: Number of existing records to create in the database
+    :param n_input: Total number of input records to generate for upsert
+    :param n_conflict: Number of input records that will conflict with existing data
+
+    **Examples**:
+        Basic test scenario::
+
+            {
+                "n_existing": 10,
+                "n_input": 5,
+                "n_conflict": 2
+            }
+
+        This creates:
+        - 10 existing records (IDs 1-10)
+        - 5 input records total
+        - 2 input records conflict with existing (IDs 9-10)
+        - 3 input records are new/incremental (IDs 11-13)
+        - Final total: 13 records after upsert
+
+    .. note::
+
+        The conflict records are generated from the end of the existing range
+        to ensure predictable conflict patterns for testing.
+    """
+
     n_existing: int = dataclasses.field()
     n_input: int = dataclasses.field()
     n_conflict: int = dataclasses.field()
@@ -69,18 +149,44 @@ class DataFaker:
 
     @cached_property
     def n_incremental(self) -> int:
+        """
+        Calculate the number of incremental (non-conflicting) input records.
+
+        :returns: Count of input records that don't conflict with existing data
+        """
         return self.n_input - self.n_conflict
 
     @cached_property
     def n_total(self) -> int:
+        """
+        Calculate the total number of records after upsert operation.
+
+        This is the sum of existing records plus incremental records, since
+        conflict records update existing ones rather than adding new ones.
+
+        :returns: Total count of records that will exist after upsert
+        """
         return self.n_existing + self.n_input - self.n_conflict
 
     @cached_property
     def create_time(self) -> datetime:
+        """
+        Base timestamp for existing record creation.
+
+        :returns: UTC timestamp used for existing record timestamps
+        """
         return get_utc_now()
 
     @cached_property
     def update_time(self) -> datetime:
+        """
+        Timestamp for record updates and new record creation.
+
+        Set to 1 minute after create_time to ensure clear temporal separation
+        between existing and updated/new records in tests.
+
+        :returns: UTC timestamp used for updated and new record timestamps
+        """
         return self.create_time + timedelta(minutes=1)
 
     @cached_property
@@ -99,24 +205,58 @@ class DataFaker:
         ]
 
     def prepare_existing_data(self, engine: sa.Engine):
+        """
+        Insert existing test data into the database.
+
+        Creates the initial dataset that will be used as the baseline for
+        testing upsert operations.
+
+        :param engine: SQLAlchemy engine for database operations
+        """
         with engine.connect() as conn:
             conn.execute(t_record.insert(), self.existing_data)
             conn.commit()
 
     @cached_property
     def conflict_range_lower(self) -> int:
+        """
+        Calculate the lower bound ID for conflict records.
+
+        Conflict records are taken from the end of the existing range to
+        ensure predictable conflict patterns.
+
+        :returns: Lowest ID that will be included in conflict records
+        """
         return self.n_existing - self.n_conflict + 1
 
     @cached_property
     def conflict_range_upper(self) -> int:
+        """
+        Calculate the upper bound ID for conflict records.
+
+        :returns: Highest ID that will be included in conflict records
+        """
         return self.conflict_range_lower + self.n_conflict - 1
 
     @cached_property
     def incremental_range_lower(self) -> int:
+        """
+        Calculate the lower bound ID for incremental records.
+
+        Incremental records start immediately after the existing range
+        to avoid any conflicts.
+
+        :returns: Lowest ID that will be used for new incremental records
+        """
         return self.n_existing + 1
 
     @cached_property
     def incremental_range_upper(self) -> int:
+        """
+        Calculate the upper bound ID for incremental records.
+
+        :returns: Highest ID that will be used for new incremental records
+        """
         return self.incremental_range_lower + self.n_incremental - 1
 
     @cached_property
@@ -154,7 +294,11 @@ class DataFaker:
 
     def get_all_records(self, engine: sa.Engine) -> T.Sequence[sa.RowMapping]:
         """
-        Get all records including existing and input data.
+        Retrieve all records from the database after upsert operation.
+
+        :param engine: SQLAlchemy engine for database operations
+
+        :returns: All records ordered by ID for consistent test assertions
         """
         with engine.connect() as conn:
             stmt = sa.select(Record).order_by(Record.id)
@@ -167,7 +311,15 @@ class DataFaker:
         limit: int = 5,
     ) -> T.Sequence[sa.RowMapping]:
         """
-        Get records that are in conflict with existing data.
+        Retrieve records that were involved in conflict resolution.
+
+        Returns records whose IDs fall within the conflict range, which should
+        have been updated during the upsert operation.
+
+        :param engine: SQLAlchemy engine for database operations
+        :param limit: Maximum number of conflict records to return
+
+        :returns: Records that were updated due to conflicts during upsert
         """
         with engine.connect() as conn:
             stmt = (
@@ -190,7 +342,15 @@ class DataFaker:
         limit: int = 5,
     ) -> T.Sequence[sa.RowMapping]:
         """
-        Get records that are incremental and not in conflict with existing data.
+        Retrieve records that were inserted as new data.
+
+        Returns records whose IDs fall within the incremental range, which should
+        have been inserted during the upsert operation without conflicts.
+
+        :param engine: SQLAlchemy engine for database operations
+        :param limit: Maximum number of incremental records to return
+
+        :returns: Records that were inserted as new data during upsert
         """
         with engine.connect() as conn:
             stmt = (
@@ -209,22 +369,50 @@ class DataFaker:
 
     def check_all_data(self, rows: T.Sequence[sa.RowMapping]):
         """
-        Check that all rows.
+        Validate that the total number of records matches expectations.
+
+        Asserts that the result set contains exactly the expected number of
+        records after the upsert operation.
+
+        :param rows: Query result set to validate
+
+        :raises AssertionError: If record count doesn't match expected total
         """
         assert len(rows) == self.n_total
 
     def check_conflict_data(self, rows: T.Sequence[sa.RowMapping]):
         """
-        Check that the rows are in the conflict range.
+        Validate that conflict records have expected properties.
+
+        Verifies that conflict records:
+
+        - Have IDs within the expected conflict range
+        - Retain their original creation timestamp (not updated)
+
+        :param rows: Conflict records to validate
+
+        :raises AssertionError: If any conflict record has unexpected properties
         """
+        assert len(rows) == self.n_conflict
         for row in rows:
             assert self.conflict_range_lower <= row["id"] <= self.conflict_range_upper
             assert row["create_at"].replace(tzinfo=timezone.utc) == self.create_time
 
     def check_incremental_data(self, rows: T.Sequence[sa.RowMapping]):
         """
-        Check that the rows are in the incremental range.
+        Validate that incremental records have expected properties.
+
+        Verifies that incremental records:
+
+        - Have IDs within the expected incremental range
+        - Have the updated description value ("v2")
+        - Have creation and update timestamps set to update_time
+
+        :param rows: Incremental records to validate
+
+        :raises AssertionError: If any incremental record has unexpected properties
         """
+        assert len(rows) == self.n_incremental
         for row in rows:
             assert (
                 self.incremental_range_lower
