@@ -4,7 +4,7 @@ See @README.rst for project overview
 
 Code Structure
 
-- Source Code: javadb_msav/**/*.py
+- Source Code: sqlalchemy_upsert_kit/**/*.py
 - Unit test: tests/**/*.py
 - Documentation: docs/source/**/*.index
 
