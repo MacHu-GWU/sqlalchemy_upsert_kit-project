@@ -3,9 +3,9 @@
 from datetime import timezone
 
 from sqlalchemy_upsert_kit.sqlite import (
+    UpsertTestError,
     insert_or_replace,
     insert_or_ignore,
-    UpsertTestError,
 )
 
 import pytest
@@ -311,6 +311,66 @@ def test_insert_or_ignore_rollback_data_integrity(
         data_faker.check_rollback(engine)
 
     print("✅ All rollback scenarios maintain data integrity")
+
+
+def test_long_transaction(
+    clean_database,
+    data_faker,
+):
+    """
+    Test if
+    """
+    engine = clean_database
+
+    # Test each error scenario and verify complete rollback
+    error_scenarios = [
+        ("_raise_on_temp_table_create", "temp_create_test"),
+        ("_raise_on_temp_data_insert", "temp_data_test"),
+        ("_raise_on_target_insert", "temp_target_test"),
+        ("_raise_on_temp_table_drop", "temp_drop_test"),
+        ("_raise_on_post_operation", "temp_post_test"),
+    ]
+
+    for flag_name, temp_table_name in error_scenarios:
+        print(f"Testing rollback with {flag_name}...")
+        if flag_name == "_raise_on_post_operation":
+            kwargs = {}
+        else:
+            kwargs = {flag_name: True}
+
+        with pytest.raises(UpsertTestError):
+            with engine.connect() as conn:
+                with conn.begin() as trans:
+                    values = [
+                        Record(id=6, desc="v1").to_dict(),
+                        Record(id=7, desc="v1").to_dict(),
+                    ]
+                    conn.execute(t_record.insert(), values)
+
+                    insert_or_ignore(
+                        engine=engine,
+                        table=t_record,
+                        values=data_faker.input_data,
+                        conn=conn,
+                        trans=trans,
+                        temp_table_name=temp_table_name,
+                        **kwargs,
+                    )
+
+                    values = [
+                        Record(id=8, desc="v1").to_dict(),
+                        Record(id=9, desc="v1").to_dict(),
+                    ]
+                    conn.execute(t_record.insert(), values)
+                    if flag_name == "_raise_on_post_operation":
+                        raise ValueError("Simulated error in post-operation")
+                    trans.commit()
+
+        data_faker.check_no_temp_tables(engine)
+        data_faker.check_rollback(engine)
+
+
+
 
 
 if __name__ == "__main__":

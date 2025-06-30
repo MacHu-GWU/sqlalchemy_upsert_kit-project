@@ -219,9 +219,11 @@ def insert_or_replace(
         finally:
             # Step 5: Clean up temporary table (even if error occurs)
             # This ensures no temporary tables are left behind
+            # NOTE: Use a fresh connection for cleanup to ensure it works even after transaction errors
             try:
-                temp_table.drop(conn)
-                conn.commit()
+                with engine.connect() as cleanup_conn:
+                    temp_table.drop(cleanup_conn)
+                    cleanup_conn.commit()
                 metadata.remove(temp_table)
             except Exception:
                 pass  # Ignore cleanup errors to avoid masking original exception
@@ -235,6 +237,8 @@ def insert_or_ignore(
     values: list[dict[str, T.Any]],
     metadata: T.Optional[sa.MetaData] = None,
     temp_table_name: T.Optional[str] = None,
+    conn: T.Optional[sa.Connection] = None,
+    trans: T.Optional[sa.Transaction] = None,
     _raise_on_temp_table_create: bool = False,
     _raise_on_temp_data_insert: bool = False,
     _raise_on_target_insert: bool = False,
@@ -294,6 +298,10 @@ def insert_or_ignore(
         This method (100K records): ~8 seconds
         Performance gain: ~5.6x faster
     """
+    # ensure:
+    # either engine is provided and conn, trans are None
+    # either engine, conn, trans are all provided
+
     if not values:
         return 0, 0  # No-op for empty data
 
@@ -366,13 +374,19 @@ def insert_or_ignore(
                 # Rollback transaction on any error
                 trans.rollback()
                 
+                # Re-raise the original exception
+                raise e
+            
+            finally:
                 # Ensure temp table cleanup even on rollback
+                # NOTE: In SQLite, DDL operations (CREATE/DROP TABLE) are not transactional
+                # So we need to clean up temp tables regardless of transaction outcome
                 if temp_table_created:
                     try:
-                        temp_table.drop(conn)
+                        # Use a fresh connection for cleanup to avoid issues with rolled-back transactions
+                        with engine.connect() as cleanup_conn:
+                            temp_table.drop(cleanup_conn)
+                            cleanup_conn.commit()
                         metadata.remove(temp_table)
                     except Exception:
                         pass  # Don't mask original exceptions with cleanup errors
-                
-                # Re-raise the original exception
-                raise e
