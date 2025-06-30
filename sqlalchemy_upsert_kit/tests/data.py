@@ -374,10 +374,13 @@ class DataFaker:
         Asserts that the result set contains exactly the expected number of
         records after the upsert operation.
 
+        Do this check only in happy path, not sad path.
+
         :param rows: Query result set to validate
 
         :raises AssertionError: If record count doesn't match expected total
         """
+        print("--- Check all records:")
         assert len(rows) == self.n_total
 
     def check_conflict_data(self, rows: T.Sequence[sa.RowMapping]):
@@ -389,10 +392,14 @@ class DataFaker:
         - Have IDs within the expected conflict range
         - Retain their original creation timestamp (not updated)
 
+        Do this check only in happy path, not sad path.
+
         :param rows: Conflict records to validate
 
         :raises AssertionError: If any conflict record has unexpected properties
         """
+        lower, upper = self.conflict_range_lower, self.conflict_range_upper
+        print(f"--- Check records in conflict range ({lower} to {upper}):")
         assert len(rows) == self.n_conflict
         for row in rows:
             assert self.conflict_range_lower <= row["id"] <= self.conflict_range_upper
@@ -408,10 +415,14 @@ class DataFaker:
         - Have the updated description value ("v2")
         - Have creation and update timestamps set to update_time
 
+        Do this check only in happy path, not sad path.
+
         :param rows: Incremental records to validate
 
         :raises AssertionError: If any incremental record has unexpected properties
         """
+        lower, upper = self.incremental_range_lower, self.incremental_range_upper
+        print(f"--- Check records in incremental range ({lower} to {upper}):")
         assert len(rows) == self.n_incremental
         for row in rows:
             assert (
@@ -422,3 +433,32 @@ class DataFaker:
             assert row["desc"] == "v2"
             assert row["create_at"].replace(tzinfo=timezone.utc) == self.update_time
             assert row["update_at"].replace(tzinfo=timezone.utc) == self.update_time
+
+    def check_no_temp_tables(self, engine: sa.Engine) -> list[str]:
+        """
+        Helper function to verify no temporary tables exist.
+
+        Do this check in both happy path and sad path.
+        """
+        print("--- Check if temp tables were cleaned up:")
+        metadata = sa.MetaData()
+        metadata.reflect(bind=engine)
+        temp_tables = [
+            table.name
+            for table in metadata.sorted_tables
+            if table.name.startswith("temp")
+        ]
+        assert not temp_tables, f"Temporary tables not cleaned up: {temp_tables}"
+        return temp_tables
+
+    def check_rollback(self, engine: sa.Engine) -> T.Sequence[sa.RowMapping]:
+        """
+        Verify that the database state is unchanged after a rollback.
+
+        Do this check only in sad path, not happy path.
+        """
+        print("--- Check rollback state:")
+        final_rows = self.get_all_records(engine)
+        msg = "Wrong number of records after rollback"
+        assert len(final_rows) == self.n_existing, msg
+        return final_rows
