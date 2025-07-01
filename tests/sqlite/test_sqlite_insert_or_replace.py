@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from sqlalchemy_upsert_kit.sqlite.insert_or_ignore import insert_or_ignore
+from sqlalchemy_upsert_kit.sqlite.insert_or_replace import insert_or_replace
 
 from datetime import timezone
 
@@ -18,7 +18,7 @@ def test_success(
     data_faker,
 ):
     """
-    Test successful insert_or_ignore operation.
+    Test successful insert_or_replace operation.
     """
     engine = clean_database
     print("========== BEFORE ==========")
@@ -30,13 +30,13 @@ def test_success(
     print(pt_from_many_dict(rows))
 
     print("========== AFTER ==========")
-    ignored_rows, inserted_rows = insert_or_ignore(
+    updated_rows, inserted_rows = insert_or_replace(
         engine=engine,
         table=t_record,
         values=data_faker.input_data,
     )
-    print(f"{ignored_rows} rows ignored, {inserted_rows} rows inserted")
-    assert ignored_rows == data_faker.n_conflict
+    print(f"{updated_rows} rows updated, {inserted_rows} rows inserted")
+    assert updated_rows == data_faker.n_conflict
     assert inserted_rows == data_faker.n_incremental
 
     data_faker.check_no_temp_tables(engine)
@@ -46,13 +46,15 @@ def test_success(
     data_faker.check_all_data(rows)
     print("  ✅Validation Passed.")
 
-    # For insert_or_ignore, conflict records should have OLD data (v1)
+    # For insert_or_replace, conflict records should have NEW data (v2)
     rows = data_faker.get_conflict_records(engine)
     print(pt_from_many_dict(rows))
     data_faker.check_conflict_data(rows)
     for row in rows:
-        assert row["desc"] == "v1"
-        assert row["update_at"].replace(tzinfo=timezone.utc) == data_faker.create_time
+        assert row["desc"] == "v2"  # Should be updated to new value
+        assert (
+            row["update_at"].replace(tzinfo=timezone.utc) == data_faker.update_time
+        )  # Should be replaced
     print("  ✅Validation Passed.")
 
     rows = data_faker.get_incremental_records(engine)
@@ -67,18 +69,23 @@ def test_rollback_with_auto_managed_transaction(
     error_scenarios,
 ):
     """
-    Test comprehensive rollback behavior and data integrity.
+    Test comprehensive rollback behavior and data integrity in auto-managed mode.
 
-    This test verifies that when errors occur at various points,
-    the original data remains completely intact.
+    This test verifies that when errors occur at various points in auto-managed
+    transaction mode, the original data remains completely intact.
     """
     engine = clean_database
 
-    for flag_name, temp_table_name in error_scenarios:
-        print(f"Testing rollback with {flag_name}...")
+    # Add insert_or_replace specific error scenario
+    error_scenarios_with_delete = error_scenarios + [
+        ("_raise_on_target_delete", "temp_delete_test")
+    ]
+
+    for flag_name, temp_table_name in error_scenarios_with_delete:
+        print(f"Testing auto-managed rollback with {flag_name}...")
         kwargs = {flag_name: True}
         with pytest.raises(UpsertTestError):
-            insert_or_ignore(
+            insert_or_replace(
                 engine=engine,
                 table=t_record,
                 values=data_faker.input_data,
@@ -88,7 +95,7 @@ def test_rollback_with_auto_managed_transaction(
         data_faker.check_no_temp_tables(engine)
         data_faker.check_rollback(engine)
 
-    print("✅ All rollback scenarios maintain data integrity")
+    print("✅ All auto-managed rollback scenarios maintain data integrity")
 
 
 def test_rollback_with_user_managed_transaction(
@@ -97,17 +104,18 @@ def test_rollback_with_user_managed_transaction(
     error_scenarios,
 ):
     """
-    Test if
+    Test user-managed transaction mode with various error scenarios.
     """
     engine = clean_database
 
     # Test each error scenario and verify complete rollback
-    error_scenarios.append(
+    error_scenarios_with_delete_and_post = error_scenarios + [
+        ("_raise_on_target_delete", "temp_delete_test"),
         ("_raise_on_post_operation", "temp_post_test"),
-    )
+    ]
 
-    for flag_name, temp_table_name in error_scenarios:
-        print(f"Testing rollback with {flag_name}...")
+    for flag_name, temp_table_name in error_scenarios_with_delete_and_post:
+        print(f"Testing user-managed rollback with {flag_name}...")
         if flag_name == "_raise_on_post_operation":
             kwargs = {}
         else:
@@ -124,7 +132,7 @@ def test_rollback_with_user_managed_transaction(
                     ]
                     conn.execute(t_record.insert(), values)
 
-                    insert_or_ignore(
+                    insert_or_replace(
                         engine=engine,
                         table=t_record,
                         values=data_faker.input_data,
@@ -150,12 +158,14 @@ def test_rollback_with_user_managed_transaction(
         data_faker.check_no_temp_tables(engine)
         data_faker.check_rollback(engine)
 
+    print("✅ All user-managed rollback scenarios maintain data integrity")
+
 
 if __name__ == "__main__":
     from sqlalchemy_upsert_kit.tests import run_cov_test
 
     run_cov_test(
         __file__,
-        "sqlalchemy_upsert_kit.sqlite.insert_or_ignore",
+        "sqlalchemy_upsert_kit.sqlite.insert_or_replace",
         preview=False,
     )
