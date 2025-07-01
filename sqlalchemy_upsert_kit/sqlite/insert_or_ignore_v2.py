@@ -7,7 +7,7 @@ import sqlalchemy as sa
 
 from ..exc import UpsertTestError
 
-from .helper import UpsertExecutor
+from .executor import UpsertExecutor
 
 
 @dataclasses.dataclass
