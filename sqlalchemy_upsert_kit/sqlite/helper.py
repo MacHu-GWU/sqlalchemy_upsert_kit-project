@@ -13,7 +13,7 @@ from functools import cached_property
 
 
 @dataclasses.dataclass
-class UpsertHelper(abc.ABC):  # need a better name
+class UpsertExecutor(abc.ABC):  # need a better name
     # --- raw fields ---
     engine: sa.Engine = dataclasses.field()
     table: sa.Table = dataclasses.field()
@@ -96,10 +96,27 @@ class UpsertHelper(abc.ABC):  # need a better name
             temp_table_name=self.temp_table_name,
         )
 
-    def prepare_temp_table(self) -> sa.Table:
-        pass
+    def create_temp_table(self, conn: sa.Connection):
+        if self._raise_on_temp_table_create:  # Testing flag
+            raise UpsertTestError("error on temp table creation")
+        self.temp_table.create(conn)
+        self.temp_table_created = True
 
-    def cleanup_temp_table(self):
+    def insert_temp_data(self, conn: sa.Connection):
+        if self._raise_on_temp_data_insert:  # Testing flag
+            raise UpsertTestError("error on temp data insertion")
+        conn.execute(self.temp_table.insert(), self.values)
+
+    def cleanup_temp_table_on_success(self, conn: sa.Connection):
+        if self.temp_table_created:
+            if self._raise_on_temp_table_drop:  # Testing flag
+                raise UpsertTestError("error on temp table cleanup")
+            # Normal cleanup - drop temp table within the same connection
+            self.temp_table.drop(conn)
+            self.metadata.remove(self.temp_table)
+            self.temp_table_created = False
+
+    def cleanup_temp_table_on_failure(self):
         """
         Clean up temporary table using a fresh connection.
 
@@ -125,14 +142,14 @@ class UpsertHelper(abc.ABC):  # need a better name
                     pass
 
     @abc.abstractmethod
-    def execute_core_upsert_logic(
+    def apply_strategy(
         self,
         conn: sa.Connection,
         trans: sa.Transaction,
     ):
         raise NotImplementedError
 
-    def execute_upsert_logic(
+    def execute_operation(
         self,
         conn: sa.Connection,
         trans: sa.Transaction,
@@ -146,29 +163,18 @@ class UpsertHelper(abc.ABC):  # need a better name
         """
         try:
             # Step 1: Create temporary staging table for bulk data processing
-            if self._raise_on_temp_table_create:  # Testing flag
-                raise UpsertTestError("error on temp table creation")
-            self.temp_table.create(conn)
-            self.temp_table_created = True
+            self.create_temp_table(conn)
 
             # Step 2: Bulk load all candidate records into staging area
             # This is much faster than individual row processing
-            if self._raise_on_temp_data_insert:  # Testing flag
-                raise UpsertTestError("error on temp data insertion")
-            conn.execute(self.temp_table.insert(), self.values)
+            self.insert_temp_data(conn)
 
             # Step 3: Insert only records that don't exist in target table
             # Uses LEFT JOIN to efficiently identify non-conflicting records
-            self.execute_core_upsert_logic(conn, trans)
+            self.apply_strategy(conn, trans)
 
             # Step 4: Clean up temporary table in normal success path
-            if self.temp_table_created:
-                if self._raise_on_temp_table_drop:  # Testing flag
-                    raise UpsertTestError("error on temp table cleanup")
-                # Normal cleanup - drop temp table within the same connection
-                self.temp_table.drop(conn)
-                self.metadata.remove(self.temp_table)
-                self.temp_table_created = False
+            self.cleanup_temp_table_on_success(conn)
 
             return self.ignored_rows, self.inserted_rows
 
@@ -185,23 +191,23 @@ class UpsertHelper(abc.ABC):  # need a better name
         if self.user_managed:
             # User-managed transaction mode: operate within caller's transaction context
             try:
-                return self.execute_upsert_logic(self.conn, self.trans)
+                return self.execute_operation(self.conn, self.trans)
             except Exception:
                 # Clean up temp table but don't manage transaction - caller is responsible
-                self.cleanup_temp_table()
+                self.cleanup_temp_table_on_failure()
                 raise
         elif self.auto_managed:
             # Auto-managed transaction mode: create and manage our own transaction
             try:
                 with self.engine.connect() as conn:
                     with conn.begin() as trans:
-                        result = self.execute_upsert_logic(conn, trans)
+                        result = self.execute_operation(conn, trans)
                         # Transaction automatically committed on successful exit
                         return result
             except Exception as e:
                 # Transaction automatically rolled back by context manager
                 # Clean up temp tables after all connections are properly closed
-                self.cleanup_temp_table()
+                self.cleanup_temp_table_on_failure()
                 raise e
         # should never reach here
         else:  # pragma: no cover

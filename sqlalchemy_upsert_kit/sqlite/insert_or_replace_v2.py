@@ -7,12 +7,12 @@ import sqlalchemy as sa
 
 from ..exc import UpsertTestError
 
-from .helper import UpsertHelper
+from .helper import UpsertExecutor
 
 
 @dataclasses.dataclass
-class InsertOrReplaceHelper(UpsertHelper):
-    def execute_core_upsert_logic(
+class InsertOrReplaceExcutor(UpsertExecutor):
+    def apply_strategy(
         self,
         conn: sa.Connection,
         trans: sa.Transaction,
@@ -163,7 +163,7 @@ def insert_or_replace(
     if not values:  # pragma: no cover
         return 0, 0  # No-op for empty data
 
-    helper = InsertOrReplaceHelper.new(
+    executor = InsertOrReplaceExcutor.new(
         engine=engine,
         table=table,
         values=values,
@@ -177,5 +177,5 @@ def insert_or_replace(
         _raise_on_target_insert=_raise_on_target_insert,
         _raise_on_temp_table_drop=_raise_on_temp_table_drop,
     )
-    helper.run()
-    return helper.replaced_rows, helper.inserted_rows
+    executor.run()
+    return executor.replaced_rows, executor.inserted_rows
