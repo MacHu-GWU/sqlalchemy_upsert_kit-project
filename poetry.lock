@@ -1502,6 +1502,25 @@ dev = ["pre-commit", "tox"]
 testing = ["pytest", "pytest-benchmark"]
 
 [[package]]
+name = "prettytable"
+version = "3.16.0"
+description = "A simple Python library for easily displaying tabular data in a visually appealing ASCII table format"
+optional = true
+python-versions = ">=3.9"
+groups = ["main"]
+markers = "extra == \"test\""
+files = [
+    {file = "prettytable-3.16.0-py3-none-any.whl", hash = "sha256:b5eccfabb82222f5aa46b798ff02a8452cf530a352c31bddfa29be41242863aa"},
+    {file = "prettytable-3.16.0.tar.gz", hash = "sha256:3c64b31719d961bf69c9a7e03d0c1e477320906a98da63952bc6698d6164ff57"},
+]
+
+[package.dependencies]
+wcwidth = "*"
+
+[package.extras]
+tests = ["pytest", "pytest-cov", "pytest-lazy-fixtures"]
+
+[[package]]
 name = "prompt-toolkit"
 version = "3.0.50"
 description = "Library for building powerful interactive command lines in Python"
@@ -2627,7 +2646,7 @@ description = "Measures the displayed width of unicode strings in a terminal"
 optional = true
 python-versions = "*"
 groups = ["main"]
-markers = "extra == \"doc\""
+markers = "extra == \"test\" or extra == \"doc\""
 files = [
     {file = "wcwidth-0.2.13-py2.py3-none-any.whl", hash = "sha256:3da69048e4540d84af32131829ff948f1e022c1c6bdb8d6102117aac784f6859"},
     {file = "wcwidth-0.2.13.tar.gz", hash = "sha256:72ea0c06399eb286d978fdedb6923a9eb47e1c486ce63e9b4e64fc18303972b5"},
@@ -2687,9 +2706,9 @@ type = ["pytest-mypy"]
 auto = []
 dev = ["build", "rich", "twine", "wheel"]
 doc = ["Sphinx", "docfly", "furo", "ipython", "nbsphinx", "pygments", "rstobj", "sphinx-copybutton", "sphinx-design", "sphinx-jinja"]
-test = ["pytest", "pytest-cov"]
+test = ["prettytable", "pytest", "pytest-cov"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9,<4.0"
-content-hash = "adff390e72981a18747549cb7d7440e945ddcdf6eac81c5c62c154106bbb08a5"
+content-hash = "3a056543de59f2246fc41e3183957e21e70545e93aa5e07a2dee719fc81cae9a"
