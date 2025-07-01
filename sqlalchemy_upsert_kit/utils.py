@@ -83,8 +83,8 @@ def clone_temp_table(
 
     Example:
         >>> metadata = sa.MetaData()
-        >>> temp_table = clone_temp_table(users_table, metadata)
-        >>> # temp_table has same columns as users_table but different metadata
+        >>> _temp_table = clone_temp_table(users_table, metadata)
+        >>> # _temp_table has same columns as users_table but different metadata
     """
     if temp_table_name is None:
         temp_table_name = get_temp_table_name(original_table.name)

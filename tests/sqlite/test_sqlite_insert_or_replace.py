@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# from sqlalchemy_upsert_kit.sqlite.insert_or_replace import insert_or_replace
-from sqlalchemy_upsert_kit.sqlite.insert_or_replace_v2 import insert_or_replace
+from sqlalchemy_upsert_kit.sqlite.insert_or_replace import insert_or_replace
 
 from datetime import timezone
 

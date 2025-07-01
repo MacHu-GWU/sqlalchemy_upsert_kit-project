@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# from sqlalchemy_upsert_kit.sqlite.insert_or_ignore import insert_or_ignore
-from sqlalchemy_upsert_kit.sqlite.insert_or_ignore_v2 import insert_or_ignore
+from sqlalchemy_upsert_kit.sqlite.insert_or_ignore import insert_or_ignore
 
 from datetime import timezone
 
