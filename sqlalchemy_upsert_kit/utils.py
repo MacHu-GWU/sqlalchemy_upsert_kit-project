@@ -45,6 +45,12 @@ def get_pk_name(table: sa.Table) -> str:
     return pk_name
 
 
+def get_temp_table_name(original_table_name: str) -> str:
+    dt = get_utc_now().strftime("%Y%m%d%H%M%S")
+    temp_table_name = f"temp_{dt}_" + original_table_name
+    return temp_table_name
+
+
 def clone_temp_table(
     original_table: sa.Table,
     metadata: sa.MetaData,
@@ -81,7 +87,6 @@ def clone_temp_table(
         >>> # temp_table has same columns as users_table but different metadata
     """
     if temp_table_name is None:
-        dt = get_utc_now().strftime("%Y%m%d%H%M%S")
-        temp_table_name = f"temp_{dt}_" + original_table.name
+        temp_table_name = get_temp_table_name(original_table.name)
     temp_table = original_table.to_metadata(metadata, name=temp_table_name)
     return temp_table
