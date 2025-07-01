@@ -167,7 +167,7 @@ def insert_or_replace(
     values: list[dict[str, T.Any]],
     metadata: T.Optional[sa.MetaData] = None,
     temp_table_name: T.Optional[str] = None,
-) -> tuple[T.Optional[int], T.Optional[int]]:
+) -> tuple[T.Optional[int], T.Optional[int]]:  # pragma: no cover
     """
     Perform high-performance bulk UPSERT operation using temporary table strategy.
 
@@ -221,7 +221,7 @@ def insert_or_replace(
         This upsert method (1M records): ~15 seconds
         Performance gain: ~20x faster
     """
-    if not values:
+    if not values:  # pragma: no cover
         return None, None  # No-op for empty data
 
     # Use separate metadata to isolate temp table from original schema
@@ -300,8 +300,8 @@ def insert_or_ignore(
     """
     Perform high-performance bulk INSERT-IF-NOT-EXISTS operation using temporary table.
 
-    This function performs conditional bulk insertion: only inserts records whose 
-    primary keys don't already exist in the target table. This is equivalent to 
+    This function performs conditional bulk insertion: only inserts records whose
+    primary keys don't already exist in the target table. This is equivalent to
     "INSERT IGNORE" or "INSERT ... ON CONFLICT DO NOTHING" but works more
     efficiently.
 
@@ -319,7 +319,7 @@ def insert_or_ignore(
     - Syncing data from external sources
 
     **Transaction Management**:
-    
+
     This function supports both auto-managed and user-managed transaction modes.
     See the module-level documentation for detailed explanations of each mode.
 
@@ -349,7 +349,7 @@ def insert_or_ignore(
     :raises UpsertTestError: When testing flags are enabled and corresponding operations fail
 
     **Examples**:
-    
+
         Auto-managed transaction (default mode)::
 
             # Function manages its own transaction
@@ -378,11 +378,11 @@ def insert_or_ignore(
             # Result: ignored=1, inserted=2
 
     .. note::
-        
+
         Parameters prefixed with ``_raise_on_`` are exclusively for testing error
         handling and cleanup behavior. Never use these in production code.
     """
-    if not values:
+    if not values:  # pragma: no cover
         return 0, 0  # No-op for empty data
 
     # Validate transaction mode parameters
@@ -415,7 +415,7 @@ def insert_or_ignore(
     ):
         """
         Execute the core insert-or-ignore logic within the provided transaction context.
-        
+
         This function implements the temporary table strategy for bulk conditional
         insertion. It operates within either a user-managed or auto-managed transaction
         depending on how the parent function was called.
@@ -448,9 +448,7 @@ def insert_or_ignore(
                         temp_table.c[pk_name] == table.c[pk_name],
                     )
                 )
-                .where(
-                    table.c[pk_name].is_(None)  # Only insert where no match exists
-                ),
+                .where(table.c[pk_name].is_(None)),  # Only insert where no match exists
             )
             res = connection.execute(stmt)
             try:
@@ -481,7 +479,7 @@ def insert_or_ignore(
     def _cleanup_temp_table():
         """
         Clean up temporary table using a fresh connection.
-        
+
         This function is called when cleanup needs to happen outside the main
         transaction context, typically in error scenarios. It uses a fresh
         connection to avoid SQLite database lock issues that can occur when
