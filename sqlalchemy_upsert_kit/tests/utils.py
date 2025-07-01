@@ -5,7 +5,7 @@ import typing as T
 from prettytable import PrettyTable
 
 
-def from_many_dict(
+def pt_from_many_dict(
     data: T.Iterable[dict[str, T.Any]],
 ) -> T.Optional[PrettyTable]:
     """
@@ -44,7 +44,7 @@ if __name__ == "__main__":
             for row in data:
                 yield row
 
-        pt = from_many_dict(iter_rows())
+        pt = pt_from_many_dict(iter_rows())
         print(pt)
         assert pt.field_names == ["id", "name"]
         assert pt.rows == [
@@ -58,7 +58,7 @@ if __name__ == "__main__":
         def iter_rows():
             return []
 
-        pt = from_many_dict(iter_rows())
+        pt = pt_from_many_dict(iter_rows())
         print(pt)
         assert pt is None
 

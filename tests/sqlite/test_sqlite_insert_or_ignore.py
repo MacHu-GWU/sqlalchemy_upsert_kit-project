@@ -13,7 +13,7 @@ from sqlalchemy_upsert_kit.tests.data import (
 )
 
 
-def test_insert_or_ignore_success(
+def test_success(
     clean_database,
     data_faker,
 ):
@@ -61,9 +61,10 @@ def test_insert_or_ignore_success(
     print("  ✅Validation Passed.")
 
 
-def test_insert_or_ignore_rollback_data_integrity(
+def test_rollback_with_auto_transaction(
     clean_database,
     data_faker,
+    error_scenarios,
 ):
     """
     Test comprehensive rollback behavior and data integrity.
@@ -73,21 +74,9 @@ def test_insert_or_ignore_rollback_data_integrity(
     """
     engine = clean_database
 
-    # Test each error scenario and verify complete rollback
-    error_scenarios = [
-        ("_raise_on_temp_table_create", "temp_create_test"),
-        ("_raise_on_temp_data_insert", "temp_data_test"),
-        ("_raise_on_target_insert", "temp_target_test"),
-        ("_raise_on_temp_table_drop", "temp_drop_test"),
-    ]
-
     for flag_name, temp_table_name in error_scenarios:
         print(f"Testing rollback with {flag_name}...")
-
-        kwargs = {
-            flag_name: True,
-        }
-
+        kwargs = {flag_name: True}
         with pytest.raises(UpsertTestError):
             insert_or_ignore(
                 engine=engine,
@@ -96,7 +85,6 @@ def test_insert_or_ignore_rollback_data_integrity(
                 temp_table_name=temp_table_name,
                 **kwargs,
             )
-
         data_faker.check_no_temp_tables(engine)
         data_faker.check_rollback(engine)
 
@@ -106,6 +94,7 @@ def test_insert_or_ignore_rollback_data_integrity(
 def test_long_transaction(
     clean_database,
     data_faker,
+    error_scenarios,
 ):
     """
     Test if
@@ -113,13 +102,9 @@ def test_long_transaction(
     engine = clean_database
 
     # Test each error scenario and verify complete rollback
-    error_scenarios = [
-        ("_raise_on_temp_table_create", "temp_create_test"),
-        ("_raise_on_temp_data_insert", "temp_data_test"),
-        ("_raise_on_target_insert", "temp_target_test"),
-        ("_raise_on_temp_table_drop", "temp_drop_test"),
+    error_scenarios.append(
         ("_raise_on_post_operation", "temp_post_test"),
-    ]
+    )
 
     for flag_name, temp_table_name in error_scenarios:
         print(f"Testing rollback with {flag_name}...")

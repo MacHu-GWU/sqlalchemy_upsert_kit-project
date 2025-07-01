@@ -38,3 +38,13 @@ def clean_database(data_faker):
     yield engine
 
     pass
+
+
+@pytest.fixture
+def error_scenarios():
+    return [
+        ("_raise_on_temp_table_create", "temp_create_test"),
+        ("_raise_on_temp_data_insert", "temp_data_test"),
+        ("_raise_on_target_insert", "temp_target_test"),
+        ("_raise_on_temp_table_drop", "temp_drop_test"),
+    ]
