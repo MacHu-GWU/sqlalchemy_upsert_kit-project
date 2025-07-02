@@ -31,7 +31,10 @@ def clean_database(data_faker):
     Fixture to ensure clean database state for each test.
     """
     dir_tmp.mkdir(parents=True, exist_ok=True)
-    path_sqlite.unlink(missing_ok=True)
+    try:
+        path_sqlite.unlink(missing_ok=True)
+    except:
+        pass
     engine = sa.create_engine(f"sqlite:///{path_sqlite}")
     Base.metadata.create_all(engine)
     data_faker.prepare_existing_data(engine)

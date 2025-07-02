@@ -214,6 +214,7 @@ class DataFaker:
         :param engine: SQLAlchemy engine for database operations
         """
         with engine.connect() as conn:
+            conn.execute(t_record.delete())
             conn.execute(t_record.insert(), self.existing_data)
             conn.commit()
 
