@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 
-from sqlalchemy_upsert_kit import api
+from sqlalchemy_upsert_kit.sqlite import api
 
 
 def test():
     _ = api
-    _ = api.sqlite
-    _ = api.sqlite.insert_or_ignore
-    _ = api.sqlite.insert_or_replace
-    _ = api.sqlite.insert_or_merge
+    _ = api.insert_or_ignore
+    _ = api.insert_or_replace
+    _ = api.insert_or_merge
 
 
 if __name__ == "__main__":
@@ -16,6 +15,6 @@ if __name__ == "__main__":
 
     run_cov_test(
         __file__,
-        "sqlalchemy_upsert_kit.api",
+        "sqlalchemy_upsert_kit.sqlite.api",
         preview=False,
     )

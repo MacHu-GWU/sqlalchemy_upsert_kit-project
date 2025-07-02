@@ -11,7 +11,7 @@ from .executor import UpsertExecutor
 
 
 @dataclasses.dataclass
-class MergeExecutor(UpsertExecutor):
+class InsertOrMergeExecutor(UpsertExecutor):
     def apply_strategy(
         self,
         conn: sa.Connection,
@@ -117,7 +117,7 @@ class MergeExecutor(UpsertExecutor):
             self.metadata.remove(merge_temp_table)
 
 
-def merge(
+def insert_or_merge(
     engine: sa.Engine,
     table: sa.Table,
     values: list[dict[str, T.Any]],
@@ -134,7 +134,7 @@ def merge(
     _raise_on_merge_update: bool = False,
 ) -> tuple[int, int]:
     """
-    Perform high-performance bulk MERGE operation using temporary table.
+    Perform high-performance bulk INSERT-OR-MERGE operation using temporary table.
 
     This function performs bulk merge operations: updates specific columns of existing
     records while preserving other columns, and inserts records that don't exist.
@@ -233,7 +233,7 @@ def merge(
             "columns parameter cannot be empty. Use insert_or_replace for full updates or insert_or_ignore for conflict-free inserts."
         )
 
-    executor = MergeExecutor.new(
+    executor = InsertOrMergeExecutor.new(
         engine=engine,
         table=table,
         values=values,
