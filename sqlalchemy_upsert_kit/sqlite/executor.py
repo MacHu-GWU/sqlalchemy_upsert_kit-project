@@ -147,6 +147,7 @@ class UpsertExecutor(abc.ABC):
     temp_table_name: T.Optional[str] = dataclasses.field()
     conn: T.Optional[sa.Connection] = dataclasses.field()
     trans: T.Optional[sa.Transaction] = dataclasses.field()
+    columns: T.Optional[list[str]] = dataclasses.field()
     # --- Testing Parameters (Testing Only) ---
     _raise_on_temp_table_create: bool = dataclasses.field()
     _raise_on_temp_data_insert: bool = dataclasses.field()
@@ -172,6 +173,7 @@ class UpsertExecutor(abc.ABC):
         temp_table_name: T.Optional[str] = None,
         conn: T.Optional[sa.Connection] = None,
         trans: T.Optional[sa.Transaction] = None,
+        columns: T.Optional[list[str]] = None,
         _raise_on_temp_table_create: bool = False,
         _raise_on_temp_data_insert: bool = False,
         _raise_on_target_delete: bool = False,
@@ -197,6 +199,7 @@ class UpsertExecutor(abc.ABC):
             temp_table_name=temp_table_name,
             conn=conn,
             trans=trans,
+            columns=columns,
             _raise_on_temp_table_create=_raise_on_temp_table_create,
             _raise_on_temp_data_insert=_raise_on_temp_data_insert,
             _raise_on_target_delete=_raise_on_target_delete,
