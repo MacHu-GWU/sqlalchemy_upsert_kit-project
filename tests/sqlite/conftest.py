@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 
 import pytest
 import sqlalchemy as sa
@@ -11,6 +12,39 @@ from sqlalchemy_upsert_kit.tests.data import (
 
 dir_tmp = dir_project_root / "tmp"
 path_sqlite = dir_tmp / "test.sqlite"
+
+dialects_no_transactions = [
+    "crate",
+]
+
+
+@pytest.fixture
+def database_url() -> str:
+    """
+    export DATABASE_URL=crate://
+    """
+    return os.environ.get("DATABASE_URL", f"sqlite:///{path_sqlite}")
+
+
+@pytest.fixture
+def engine(database_url) -> sa.Engine:
+    engine = sa.create_engine(database_url)
+    if database_url.startswith("crate://"):
+        # uv pip install --upgrade 'sqlalchemy-cratedb>=0.42.0.dev2'
+        from sqlalchemy_cratedb.support import refresh_after_dml
+        refresh_after_dml(engine)
+    return engine
+
+
+@pytest.fixture(autouse=True)
+def skip_transactions(request, database_url):
+    """
+    https://stackoverflow.com/a/28198398
+    """
+    for dialect in dialects_no_transactions:
+        if database_url.startswith(dialect):
+            if "rollback" in request.node.name:
+                pytest.skip('skipped for dialect: {}'.format(dialect))
 
 
 @pytest.fixture
@@ -26,7 +60,7 @@ def data_faker():
 
 
 @pytest.fixture
-def clean_database(data_faker):
+def clean_database(engine, data_faker):
     """
     Fixture to ensure clean database state for each test.
     """
@@ -35,7 +69,6 @@ def clean_database(data_faker):
         path_sqlite.unlink(missing_ok=True)
     except:
         pass
-    engine = sa.create_engine(f"sqlite:///{path_sqlite}")
     Base.metadata.create_all(engine)
     data_faker.prepare_existing_data(engine)
     yield engine
