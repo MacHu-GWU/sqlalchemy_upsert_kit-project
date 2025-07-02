@@ -347,9 +347,9 @@ Simple, consistent API across all UPSERT patterns:
     updated, inserted = sauk.sqlite.insert_or_replace(engine, table, records)
     
     # Pattern 3: Selective merge (future implementation)
-    updated, inserted = sauk.sqlite.upsert_merge(
+    updated, inserted = sauk.sqlite.insert_or_merge(
         engine, table, records,
-        update_fields=['description', 'update_at']
+        columns=['description', 'update_at']
     )
 
 
