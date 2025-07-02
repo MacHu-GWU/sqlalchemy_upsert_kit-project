@@ -154,6 +154,7 @@ class UpsertExecutor(abc.ABC):
     _raise_on_target_delete: bool = dataclasses.field()
     _raise_on_target_insert: bool = dataclasses.field()
     _raise_on_temp_table_drop: bool = dataclasses.field()
+    _raise_on_merge_update: bool = dataclasses.field()
     # --- Operation Results ---
     _ignored_rows: int = dataclasses.field(default=0)
     _replaced_rows: int = dataclasses.field(default=0)
@@ -179,6 +180,7 @@ class UpsertExecutor(abc.ABC):
         _raise_on_target_delete: bool = False,
         _raise_on_target_insert: bool = False,
         _raise_on_temp_table_drop: bool = False,
+        _raise_on_merge_update: bool = False,
     ):
         """
         Factory method to create UpsertExecutor instances with sensible defaults.
@@ -205,6 +207,7 @@ class UpsertExecutor(abc.ABC):
             _raise_on_target_delete=_raise_on_target_delete,
             _raise_on_target_insert=_raise_on_target_insert,
             _raise_on_temp_table_drop=_raise_on_temp_table_drop,
+            _raise_on_merge_update=_raise_on_merge_update,
         )
 
     @cached_property
