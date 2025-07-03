@@ -37,7 +37,8 @@ class InsertOrMergeExecutor(UpsertExecutor):
                 sa.Column(col.name, col.type, nullable=col.nullable)
                 for col in self.table.columns
             ],
-            prefixes=["TEMPORARY"],
+            # CrateDB does not understand `CREATE TEMPORARY TABLE ...`.
+            # prefixes=["TEMPORARY"],
         )
         merge_temp_table.create(conn)
 

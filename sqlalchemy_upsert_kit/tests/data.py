@@ -89,7 +89,10 @@ def get_utc_now() -> datetime:
 
     :returns: Current datetime in UTC timezone
     """
-    return datetime.now(timezone.utc)
+    # CrateDB only does milliseconds-granularity.
+    ts = datetime.now(timezone.utc)
+    ms = int(ts.microsecond / 1_000) * 1_000
+    return datetime.now(timezone.utc).replace(microsecond=ms)
 
 
 @dataclasses.dataclass
