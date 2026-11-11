@@ -6,9 +6,9 @@ What this library does: see `README.rst`.
 
 Package: `sqlalchemy_upsert_kit/` (import name `sqlalchemy_upsert_kit`).
 
-Backends: only SQLite is implemented (`sqlalchemy_upsert_kit/sqlite/`, exposed as `api.sqlite`). There is no PostgreSQL or MySQL support or test yet.
+Backends: SQLite (`sqlalchemy_upsert_kit/sqlite/`, `api.sqlite`) and PostgreSQL (`sqlalchemy_upsert_kit/postgres/`, `api.postgres`), sharing the workflow in `sqlalchemy_upsert_kit/core/`. No MySQL yet. The PostgreSQL tests need `mise run psql-up` locally.
 
-How to maintain this library: the `maintain-sqlalchemy_upsert_kit-*` skills, once they exist (create them with `pywf-oss-write-maintain-skill`).
+How to maintain this library: **before changing the package, its tests, its mise tasks, or CI, load `maintain-sqlalchemy_upsert_kit-base`**. To add a database backend, use `maintain-sqlalchemy_upsert_kit-add-backend`.
 
 <!-- END project block -->
 
