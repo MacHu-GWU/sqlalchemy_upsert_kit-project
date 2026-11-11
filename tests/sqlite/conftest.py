@@ -1,51 +1,11 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-import sqlalchemy as sa
-
-from sqlalchemy_upsert_kit.paths import path_enum
-from sqlalchemy_upsert_kit.tests.data import Base
-from sqlalchemy_upsert_kit.tests.data import DataFaker
-
-dir_tmp = path_enum.dir_tmp
-path_sqlite = dir_tmp / "test.sqlite"
 
 
 @pytest.fixture
-def data_faker():
+def db_url(tmp_path) -> str:
     """
-    Fixture providing a standard DataFaker configuration for tests.
+    A SQLite file of its own for each test.
     """
-    return DataFaker(
-        n_existing=4,
-        n_input=3,
-        n_conflict=2,
-    )
-
-
-@pytest.fixture
-def clean_database(data_faker):
-    """
-    Fixture to ensure clean database state for each test.
-    """
-    dir_tmp.mkdir(parents=True, exist_ok=True)
-    try:
-        path_sqlite.unlink(missing_ok=True)
-    except:
-        pass
-    engine = sa.create_engine(f"sqlite:///{path_sqlite}")
-    Base.metadata.create_all(engine)
-    data_faker.prepare_existing_data(engine)
-    yield engine
-
-    pass
-
-
-@pytest.fixture
-def error_scenarios():
-    return [
-        ("_raise_on_temp_table_create", "temp_create_test"),
-        ("_raise_on_temp_data_insert", "temp_data_test"),
-        ("_raise_on_target_insert", "temp_target_test"),
-        ("_raise_on_temp_table_drop", "temp_drop_test"),
-    ]
+    return f"sqlite:///{tmp_path / 'test.sqlite'}"

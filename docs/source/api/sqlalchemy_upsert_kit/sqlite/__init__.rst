@@ -11,6 +11,7 @@ sub packages and modules
     :maxdepth: 1
 
     api <api>
+    executor <executor>
     insert_or_ignore <insert_or_ignore>
     insert_or_merge <insert_or_merge>
     insert_or_replace <insert_or_replace>

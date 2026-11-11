@@ -1,198 +1,90 @@
 # -*- coding: utf-8 -*-
 
 """
-:class:`~sqlalchemy_upsert_kit.core.executor.UpsertExecutor` is abstract.
-These tests drive its shared workflow (staging table lifecycle, both
-transaction modes, failure cleanup) through a minimal concrete strategy on a
-SQLite file. The real strategies are tested in each backend's test folder.
+:class:`~sqlalchemy_upsert_kit.core.executor.UpsertExecutor` is abstract; these
+tests drive it through the SQLite executor. The full behavior contract runs in
+each backend's strategy test files.
 """
 
+from sqlalchemy_upsert_kit.core.executor import FAIL_STEPS
 from sqlalchemy_upsert_kit.core.executor import UpsertExecutor
-
-import dataclasses
 
 import pytest
 import sqlalchemy as sa
 
 from sqlalchemy_upsert_kit.exc import UpsertTestError
-from sqlalchemy_upsert_kit.tests.data import Base
-from sqlalchemy_upsert_kit.tests.data import DataFaker
-from sqlalchemy_upsert_kit.tests.data import t_record
+from sqlalchemy_upsert_kit.sqlite.executor import SqliteUpsertExecutor
+from sqlalchemy_upsert_kit.tests.contract import INPUT
+from sqlalchemy_upsert_kit.tests.contract import EXISTING_ROWS
+from sqlalchemy_upsert_kit.tests.contract import EXPECTED_ROWS
+from sqlalchemy_upsert_kit.tests.contract import assert_no_staging
+from sqlalchemy_upsert_kit.tests.contract import read_rows
+from sqlalchemy_upsert_kit.tests.contract import t_record
 
 
-@dataclasses.dataclass
-class CopyAllExecutor(UpsertExecutor):
-    """
-    Minimal strategy: copy every staged row into the target table.
-    """
-
-    def apply_strategy(
-        self,
-        conn: sa.Connection,
-        trans: sa.Transaction,
-    ):
-        if self._raise_on_target_insert:  # Testing flag
-            raise UpsertTestError("error on target insertion")
-        stmt = self.table.insert().from_select(
-            list(self._temp_table.columns.keys()),
-            sa.select(self._temp_table),
-        )
-        res = conn.execute(stmt)
-        self._inserted_rows = res.rowcount
+def new_executor(engine, **kwargs) -> UpsertExecutor:
+    kwargs.setdefault("values", INPUT)
+    kwargs.setdefault("strategy", "replace")
+    return SqliteUpsertExecutor(engine=engine, table=t_record, **kwargs)
 
 
-@pytest.fixture
-def engine(tmp_path) -> sa.Engine:
-    engine = sa.create_engine(f"sqlite:///{tmp_path / 'test.sqlite'}")
-    Base.metadata.create_all(engine)
-    return engine
-
-
-@pytest.fixture
-def faker() -> DataFaker:
-    # no conflicts, so CopyAllExecutor never hits a primary key violation
-    return DataFaker(n_existing=2, n_input=3, n_conflict=0)
-
-
-def test_new_auto_managed():
-    engine = sa.create_engine("sqlite:///:memory:")
-    executor = CopyAllExecutor.new(
-        engine=engine,
-        table=t_record,
-        values=[],
-    )
-    assert isinstance(executor, UpsertExecutor)
-    assert executor.auto_managed is True
-    assert executor.user_managed is False
+def test_defaults(engine):
+    executor = new_executor(engine)
     assert isinstance(executor.metadata, sa.MetaData)
     assert executor.temp_table_name.startswith("temp_")
-    assert executor.temp_table_name.endswith(t_record.name)
-    assert executor.pk_name == "id"
+    assert executor.pk_column is t_record.c.id
+    assert executor.update_keys == ["name", "note"]
+    assert executor.user_managed is False
 
 
-def test_new_user_managed():
-    engine = sa.create_engine("sqlite:///:memory:")
-    with engine.connect() as conn:
-        trans = conn.begin()
-        executor = CopyAllExecutor.new(
-            engine=engine,
-            table=t_record,
-            values=[],
-            temp_table_name="my_temp_table",
-            conn=conn,
-            trans=trans,
-        )
-        assert executor.user_managed is True
-        assert executor.auto_managed is False
-        assert executor.temp_table_name == "my_temp_table"
-        trans.rollback()
+def test_run_auto_managed(engine):
+    assert new_executor(engine).run() == (2, 1)
+    assert read_rows(engine) == EXPECTED_ROWS["replace"]
+    assert_no_staging(engine)
 
 
-def test_run_auto_managed(engine, faker):
-    faker.prepare_existing_data(engine)
-    executor = CopyAllExecutor.new(
-        engine=engine,
-        table=t_record,
-        values=faker.input_data,
-    )
-    ignored, inserted = executor.run()
-    assert (ignored, inserted) == (0, faker.n_input)
-    faker.check_all_data(faker.get_all_records(engine))
-    faker.check_no_temp_tables(engine)
-    assert executor._temp_table_created is False
-
-
-def test_run_user_managed(engine, faker):
-    faker.prepare_existing_data(engine)
+def test_run_user_managed(engine):
     with engine.connect() as conn:
         with conn.begin() as trans:
-            executor = CopyAllExecutor.new(
-                engine=engine,
-                table=t_record,
-                values=faker.input_data,
-                conn=conn,
-                trans=trans,
-            )
-            executor.run()
-    faker.check_all_data(faker.get_all_records(engine))
-    faker.check_no_temp_tables(engine)
+            executor = new_executor(engine, conn=conn, trans=trans)
+            assert executor.user_managed is True
+            assert executor.run() == (2, 1)
+    assert read_rows(engine) == EXPECTED_ROWS["replace"]
 
 
-@pytest.mark.parametrize(
-    "flag_name",
-    [
-        "_raise_on_temp_table_create",
-        "_raise_on_temp_data_insert",
-        "_raise_on_target_insert",
-        "_raise_on_temp_table_drop",
-    ],
-)
-def test_run_auto_managed_failure(engine, faker, flag_name):
+def test_run_ignore_counts(engine):
     """
-    Every failure point rolls back the data and leaves no staging table.
+    Without update keys, the conflicts are the records that were not inserted.
     """
-    faker.prepare_existing_data(engine)
-    executor = CopyAllExecutor.new(
-        engine=engine,
-        table=t_record,
-        values=faker.input_data,
-        **{flag_name: True},
-    )
-    with pytest.raises(UpsertTestError):
+    assert new_executor(engine, strategy="ignore").run() == (2, 1)
+
+
+def test_run_empty_values(engine):
+    assert new_executor(engine, values=[]).run() == (0, 0)
+
+
+@pytest.mark.parametrize("fail_at", FAIL_STEPS)
+def test_run_failure(engine, fail_at):
+    executor = new_executor(engine, fail_at=fail_at)
+    with pytest.raises(UpsertTestError, match=fail_at):
         executor.run()
-    faker.check_rollback(engine)
-    faker.check_no_temp_tables(engine)
+    assert read_rows(engine) == EXISTING_ROWS
+    assert executor.temp_table_name not in executor.metadata.tables
+    assert_no_staging(engine)
 
 
 @pytest.mark.parametrize(
-    "flag_name",
+    "kwargs, message",
     [
-        "_raise_on_temp_data_insert",
-        pytest.param(
-            "_raise_on_target_insert",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason=(
-                    "Known SQLite bug: when the caller's transaction has not written "
-                    "yet, CREATE TABLE autocommits; after the staged rows are written, "
-                    "the fresh cleanup connection is blocked by the caller's write lock, "
-                    "times out, and the staging table is left behind."
-                ),
-            ),
-        ),
+        (dict(conn="conn"), "both conn and trans"),
+        (dict(trans="trans"), "both conn and trans"),
+        (dict(fail_at="nowhere"), "fail_at must be one of"),
+        (dict(temp_table_name="records"), "must differ"),
     ],
 )
-def test_run_user_managed_failure(engine, faker, flag_name):
-    faker.prepare_existing_data(engine)
-    with pytest.raises(UpsertTestError):
-        with engine.connect() as conn:
-            with conn.begin() as trans:
-                CopyAllExecutor.new(
-                    engine=engine,
-                    table=t_record,
-                    values=faker.input_data,
-                    conn=conn,
-                    trans=trans,
-                    **{flag_name: True},
-                ).run()
-    faker.check_rollback(engine)
-    faker.check_no_temp_tables(engine)
-
-
-def test_cleanup_temp_table_on_failure_when_already_dropped(engine):
-    """
-    A failed drop (the table is already gone) is swallowed, and the table
-    is still removed from the metadata.
-    """
-    executor = CopyAllExecutor.new(
-        engine=engine,
-        table=t_record,
-        values=[],
-    )
-    executor.clone_temp_table()
-    executor._temp_table_created = True  # pretend it was created, but it was not
-    executor.cleanup_temp_table_on_failure()
-    assert executor.temp_table_name not in executor.metadata.tables
+def test_invalid_arguments(engine, kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        new_executor(engine, **kwargs)
 
 
 if __name__ == "__main__":

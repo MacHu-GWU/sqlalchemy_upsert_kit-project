@@ -2,7 +2,11 @@
 
 import os
 import sys
+
 import pytest
+import sqlalchemy as sa
+
+from sqlalchemy_upsert_kit.tests.contract import reset
 
 # ------------------------------------------------------------------------------
 # Local PostgreSQL test container, started by ``mise run psql-up``.
@@ -37,3 +41,25 @@ def pg_url() -> str:
     SQLAlchemy URL of the PostgreSQL test database.
     """
     return os.environ.get(ENV_PG_URL, PG_URL)
+
+
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+    dbapi_connection.execute("PRAGMA foreign_keys = ON")
+
+
+@pytest.fixture
+def engine(db_url) -> sa.Engine:
+    """
+    A fresh contract database (``reset``) on the backend that the test
+    folder's ``db_url`` fixture names.
+
+    The pool holds exactly one connection, so after an auto-managed call a test
+    inspects the very connection the call used. SQLite enforces foreign keys,
+    so a strategy that deleted a parent row would cascade, and fail the test.
+    """
+    engine = sa.create_engine(db_url, pool_size=1, max_overflow=0)
+    if engine.dialect.name == "sqlite":
+        sa.event.listen(engine, "connect", _enable_sqlite_foreign_keys)
+    reset(engine)
+    yield engine
+    engine.dispose()

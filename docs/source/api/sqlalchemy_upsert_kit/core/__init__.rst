@@ -11,4 +11,6 @@ sub packages and modules
     :maxdepth: 1
 
     executor <executor>
+    schema <schema>
+    validation <validation>
     

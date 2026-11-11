@@ -1,32 +1,16 @@
 # -*- coding: utf-8 -*-
 
 """
-High-Performance SQLAlchemy Bulk Operations Module for Sqlite
+High-performance bulk upsert operations for SQLite.
 
-This module provides optimized bulk operations for SQLAlchemy using temporary tables.
-These methods are specifically designed for large datasets and offer
-superior performance compared to traditional row-by-row operations.
+Each operation loads the records into a ``TEMPORARY`` staging table, then
+writes them to the target table with one native
+``INSERT ... SELECT ... ON CONFLICT`` statement (SQLite 3.24+). The shared
+workflow (transaction modes, SAVEPOINT, staging lifecycle, input validation)
+lives in :mod:`sqlalchemy_upsert_kit.core`; the SQLite-specific parts are in
+:mod:`sqlalchemy_upsert_kit.sqlite.executor`.
 
-
-Implementation Notes
-------------------------------------------------------------------------------
-**Temporary Table Strategy**:
-    All bulk operations use temporary tables as staging areas to achieve optimal
-    performance. Temporary tables are created with unique names to avoid conflicts
-    in concurrent environments. Comprehensive cleanup ensures no temporary tables
-    are left behind, even when errors occur.
-
-**SQLite DDL Behavior**:
-    SQLite DDL operations (CREATE/DROP TABLE) are not transactional and commit
-    immediately. The cleanup logic accounts for this by using fresh connections
-    when necessary to avoid database locks during error scenarios.
-
-**Testing Infrastructure**:
-    Functions include boolean parameters prefixed with ``_raise_on_`` that are
-    exclusively for testing purposes. These parameters inject controlled failures
-    at specific points in the operation flow to verify error handling and cleanup
-    behavior. These parameters should never be used in production code.
+Import the functions from :mod:`sqlalchemy_upsert_kit.api` (``api.sqlite``).
+This package imports nothing itself: importing SQLAlchemy while coverage starts
+breaks SQLAlchemy 2.1 statement compilation in per-module coverage runs.
 """
-
-from .insert_or_ignore import insert_or_ignore
-from .insert_or_replace import insert_or_replace

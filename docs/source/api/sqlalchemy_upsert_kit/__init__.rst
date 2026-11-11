@@ -15,5 +15,4 @@ sub packages and modules
     sqlite <sqlite/__init__>
     api <api>
     exc <exc>
-    utils <utils>
     
