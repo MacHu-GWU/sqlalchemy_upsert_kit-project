@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 
-from sqlalchemy_upsert_kit.utils import (
-    get_utc_now,
-    get_pk_name,
-    clone_temp_table,
-)
+from sqlalchemy_upsert_kit.utils import get_utc_now
+from sqlalchemy_upsert_kit.utils import get_pk_name
+from sqlalchemy_upsert_kit.utils import clone_temp_table
 
 import pytest
 from datetime import timezone

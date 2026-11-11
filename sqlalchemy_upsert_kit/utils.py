@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import typing as T
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
 import sqlalchemy as sa
 
@@ -17,14 +18,11 @@ def get_pk_name(table: sa.Table) -> str:
     This function ensures the table has exactly one primary key column,
     which is required for the bulk operations to work correctly.
 
-    Args:
-        table: SQLAlchemy table object
+    :param table: SQLAlchemy table object
 
-    Returns:
-        Name of the primary key column
+    :returns: Name of the primary key column
 
-    Raises:
-        ValueError: If table has zero or multiple primary key columns
+    :raises ValueError: If table has zero or multiple primary key columns
 
     Example:
         >>> table = sa.Table(
@@ -63,17 +61,15 @@ def clone_temp_table(
     table for bulk operations. The temporary table inherits all columns, types,
     and constraints from the original table.
 
-    Args:
-        original_table: The table to clone
-        metadata: Metadata object for the temporary table.
-            Should be a separate instance from the original table's metadata
-            to avoid conflicts and enable proper cleanup.
-        temp_table_name: Custom name for the temporary table.
-            If None, generates a unique name with timestamp to avoid conflicts
-            in concurrent environments.
+    :param original_table: The table to clone
+    :param metadata: Metadata object for the temporary table.
+        Should be a separate instance from the original table's metadata
+        to avoid conflicts and enable proper cleanup.
+    :param temp_table_name: Custom name for the temporary table.
+        If None, generates a unique name with timestamp to avoid conflicts
+        in concurrent environments.
 
-    Returns:
-        New temporary table with identical schema
+    :returns: New temporary table with identical schema
 
     .. note::
 

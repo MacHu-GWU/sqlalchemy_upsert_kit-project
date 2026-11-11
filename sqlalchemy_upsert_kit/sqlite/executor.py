@@ -66,7 +66,9 @@ import abc
 import sqlalchemy as sa
 
 from ..exc import UpsertTestError
-from ..utils import get_pk_name, get_temp_table_name, clone_temp_table
+from ..utils import get_pk_name
+from ..utils import get_temp_table_name
+from ..utils import clone_temp_table
 
 import dataclasses
 from functools import cached_property

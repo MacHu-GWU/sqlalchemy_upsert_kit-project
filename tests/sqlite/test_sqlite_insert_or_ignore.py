@@ -7,10 +7,8 @@ from datetime import timezone
 import pytest
 from sqlalchemy_upsert_kit.exc import UpsertTestError
 from sqlalchemy_upsert_kit.tests.utils import pt_from_many_dict
-from sqlalchemy_upsert_kit.tests.data import (
-    get_utc_now,
-    t_record,
-)
+from sqlalchemy_upsert_kit.tests.data import get_utc_now
+from sqlalchemy_upsert_kit.tests.data import t_record
 
 
 def test_success(

@@ -4,10 +4,8 @@ import pytest
 import sqlalchemy as sa
 
 from sqlalchemy_upsert_kit.paths import path_enum
-from sqlalchemy_upsert_kit.tests.data import (
-    Base,
-    DataFaker,
-)
+from sqlalchemy_upsert_kit.tests.data import Base
+from sqlalchemy_upsert_kit.tests.data import DataFaker
 
 dir_tmp = path_enum.dir_tmp
 path_sqlite = dir_tmp / "test.sqlite"
