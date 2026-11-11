@@ -36,13 +36,18 @@ classifiers = [
 # --- Dependencies ---
 # Edit these lists, then ``mise run inst`` to update ``uv.lock`` and ``.venv``.
 dependencies = [
-    "sqlalchemy>=2.0.0,<3.0.0", # database toolkit and ORM
+    "sqlalchemy>=2.0.28,<3.0.0", # database toolkit and ORM; 2.0.28 adds preserve_rowcount
 ]
 
 # --- Optional dependencies (extras) ---
 # Read: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-optional-dependencies
 # Each one must support every Python version in ``requires-python``.
 [project.optional-dependencies]
+
+# PostgreSQL driver for ``api.postgres``
+postgres = [
+    "psycopg[binary]>=3.3.8,<4.0.0", # PostgreSQL driver
+]
 
 # local development
 dev = [
@@ -54,6 +59,7 @@ test = [
     "pytest>=9.1.1,<10.0.0",
     "pytest-cov>=7.1.0,<8.0.0",
     "prettytable>=3.0.0,<4.0.0", # pretty print tables in test output
+    "psycopg[binary]>=3.3.8,<4.0.0", # PostgreSQL driver for the postgres tests
 ]
 
 # docs build

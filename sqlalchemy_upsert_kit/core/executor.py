@@ -49,8 +49,10 @@ All strategies support dual-mode operation:
 
 **Database Compatibility**:
 
-This module is designed for SQLite but the abstraction pattern can be extended
-to other database systems by implementing database-specific executors.
+This module is dialect-agnostic. Each backend subpackage (``sqlite``, ``postgres``)
+subclasses :class:`UpsertExecutor` and overrides only what its database does
+differently, such as how the staging table is created and cleaned up, and the
+SQL of each strategy.
 
 **Implementation Notes**:
 
@@ -62,6 +64,8 @@ to other database systems by implementing database-specific executors.
 
 import typing as T
 import abc
+import dataclasses
+from functools import cached_property
 
 import sqlalchemy as sa
 
@@ -69,9 +73,6 @@ from ..exc import UpsertTestError
 from ..utils import get_pk_name
 from ..utils import get_temp_table_name
 from ..utils import clone_temp_table
-
-import dataclasses
-from functools import cached_property
 
 
 @dataclasses.dataclass
@@ -145,11 +146,11 @@ class UpsertExecutor(abc.ABC):
     engine: sa.Engine = dataclasses.field()
     table: sa.Table = dataclasses.field()
     values: list[dict[str, T.Any]] = dataclasses.field()
-    metadata: T.Optional[sa.MetaData] = dataclasses.field()
-    temp_table_name: T.Optional[str] = dataclasses.field()
-    conn: T.Optional[sa.Connection] = dataclasses.field()
-    trans: T.Optional[sa.Transaction] = dataclasses.field()
-    columns: T.Optional[list[str]] = dataclasses.field()
+    metadata: sa.MetaData | None = dataclasses.field()
+    temp_table_name: str | None = dataclasses.field()
+    conn: sa.Connection | None = dataclasses.field()
+    trans: sa.Transaction | None = dataclasses.field()
+    columns: list[str] | None = dataclasses.field()
     # --- Testing Parameters (Testing Only) ---
     _raise_on_temp_table_create: bool = dataclasses.field()
     _raise_on_temp_data_insert: bool = dataclasses.field()
@@ -172,11 +173,11 @@ class UpsertExecutor(abc.ABC):
         engine: sa.Engine,
         table: sa.Table,
         values: list[dict[str, T.Any]],
-        metadata: T.Optional[sa.MetaData] = None,
-        temp_table_name: T.Optional[str] = None,
-        conn: T.Optional[sa.Connection] = None,
-        trans: T.Optional[sa.Transaction] = None,
-        columns: T.Optional[list[str]] = None,
+        metadata: sa.MetaData | None = None,
+        temp_table_name: str | None = None,
+        conn: sa.Connection | None = None,
+        trans: sa.Transaction | None = None,
+        columns: list[str] | None = None,
         _raise_on_temp_table_create: bool = False,
         _raise_on_temp_data_insert: bool = False,
         _raise_on_target_delete: bool = False,
@@ -301,6 +302,10 @@ class UpsertExecutor(abc.ABC):
     def cleanup_temp_table_on_failure(self):
         """
         Clean up temporary table using a fresh connection after transaction failure.
+
+        This default suits backends whose staging table is a regular table
+        that outlives a rollback (SQLite). A backend whose staging table
+        disappears with the rollback (PostgreSQL temporary table) overrides it.
 
         This method is called when cleanup needs to happen outside the main
         transaction context, typically in error scenarios. It uses a fresh

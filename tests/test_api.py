@@ -9,6 +9,10 @@ def test():
     _ = api.sqlite.insert_or_ignore
     _ = api.sqlite.insert_or_replace
     _ = api.sqlite.insert_or_merge
+    _ = api.postgres
+    _ = api.postgres.insert_or_ignore
+    _ = api.postgres.insert_or_replace
+    _ = api.postgres.insert_or_merge
 
 
 if __name__ == "__main__":

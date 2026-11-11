@@ -5,6 +5,8 @@ iniconfig==2.3.1
 packaging==26.3
 pluggy==1.7.0
 prettytable==3.18.0
+psycopg==3.3.8
+psycopg-binary==3.3.8 ; implementation_name != 'pypy'
 pygments==2.21.0
 pytest==9.2.0
 pytest-cov==7.1.0

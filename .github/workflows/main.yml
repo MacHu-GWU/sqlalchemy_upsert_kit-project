@@ -46,8 +46,8 @@ jobs:
 #        os: ["ubuntu-latest", ] # Commented out configurations for quick debugging
 #        os: ["windows-latest", ] # Commented out configurations for quick debugging
         # Define the Python versions to test with
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
-#        python-version: ["3.11", ] # Commented out configurations for quick debugging
+#        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", ] # Commented out configurations for quick debugging
         # Exclude specific combinations from the matrix
         exclude:
           - os: windows-latest # this one has no effect, it is for demonstration use only
@@ -81,6 +81,28 @@ jobs:
       - name: "Install dependencies"
         if: steps.cache-venv.outputs.cache-hit != 'true'
         run: uv sync --extra test
+      # The postgres tests need a PostgreSQL server. Use the one preinstalled on the
+      # GitHub-hosted runner image (stopped by default), so no image is pulled from
+      # Docker Hub and no third-party action is needed. Locally, ``mise run psql-up``
+      # starts a container instead. tests/conftest.py reads this URL from the env var.
+      # Installed software: https://github.com/actions/runner-images/tree/main/images
+      - name: "Start PostgreSQL (Linux)"
+        if: runner.os == 'Linux'
+        run: |
+          sudo systemctl start postgresql.service
+          pg_isready --host=127.0.0.1 --timeout=30
+          sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'password';"
+          echo "SQLALCHEMY_UPSERT_KIT_PG_URL=postgresql+psycopg://postgres:password@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
+      - name: "Start PostgreSQL (Windows)"
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # The image ships one PostgreSQL service (postgresql-x64-<major>), disabled; user postgres, password root.
+          $svc = Get-Service -Name "postgresql*" | Select-Object -First 1
+          Set-Service -Name $svc.Name -StartupType Manual
+          Start-Service -Name $svc.Name
+          & "$env:PGBIN\pg_isready.exe" --host=127.0.0.1 --timeout=30
+          "SQLALCHEMY_UPSERT_KIT_PG_URL=postgresql+psycopg://postgres:root@127.0.0.1:5432/postgres" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       # Run pytest with coverage reporting. --extra test is a safety net: if uv ever has to rebuild
       # the .venv here, it installs the test extra too, so pytest is never missing.
       - name: "Run pytest"

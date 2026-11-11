@@ -14,6 +14,9 @@ python = "3.12" # the dev Python; .readthedocs.yml reads it from here
 uv = "latest"
 claude = "latest"
 pandoc = "3.9" # Use pandoc 3.9 - latest stable major version as of 2026-04
+# Apple's container runtime (https://github.com/apple/container) for the local PostgreSQL test container.
+# Installed without admin: mise unpacks the signed .pkg. Needs Apple silicon and macOS 26+.
+container = { version = "1.7.1", os = ["macos"] }
 
 # === Tasks ===
 # Python Environment Management
@@ -41,16 +44,25 @@ uv export --format requirements-txt --extra doc --no-emit-project --no-hashes --
 uv export --format requirements-txt --extra mise --no-emit-project --no-hashes --no-annotate --no-emit-package pywin32 --no-emit-package colorama --no-emit-package tzdata | sed 's/ ; platform_machine ==.*or.*//' > requirements-mise.txt
 """
 
+# Local test databases (port and credentials live in tests/conftest.py)
+[tasks.psql-up]
+description = "🐘 Start the local PostgreSQL test container with Apple container (idempotent, --rm)"
+run = "python .mise/tasks/psql.py up"
+
+[tasks.psql-down]
+description = "🐘 Stop and remove the local PostgreSQL test container (idempotent)"
+run = "python .mise/tasks/psql.py down"
+
 # Testing
 [tasks.test]
 description = "🧪 Run unit tests using pytest (scans test files automatically)"
 run = ".venv/bin/pytest tests"
-depends = ["inst"]
+depends = ["inst", "psql-up"]
 
 [tasks.cov]
 description = "🧪📊 Run unit tests with code coverage using pytest (generates HTML report in htmlcov/)"
 run = ".venv/bin/pytest tests -s --tb=native --cov=sqlalchemy_upsert_kit --cov-report term-missing --cov-report html:htmlcov"
-depends = ["inst"]
+depends = ["inst", "psql-up"]
 
 [tasks.view-cov]
 description = "👀📊 Open code coverage HTML report in browser (requires 'cov' task to run first)"

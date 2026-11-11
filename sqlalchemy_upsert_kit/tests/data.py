@@ -444,6 +444,18 @@ class DataFaker:
         Do this check in both happy path and sad path.
         """
         print("--- Check if temp tables were cleaned up:")
+        if engine.dialect.name == "postgresql":
+            # PostgreSQL temporary tables live in per-session pg_temp schemas,
+            # which reflection of the default schema does not see.
+            stmt = sa.text(
+                "SELECT relname FROM pg_class "
+                "WHERE relpersistence = 't' AND relkind = 'r' "
+                "AND relname LIKE 'temp%'"
+            )
+            with engine.connect() as conn:
+                temp_tables = list(conn.execute(stmt).scalars())
+            assert not temp_tables, f"Temporary tables not cleaned up: {temp_tables}"
+            return temp_tables
         metadata = sa.MetaData()
         metadata.reflect(bind=engine)
         temp_tables = [
