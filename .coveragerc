@@ -5,7 +5,6 @@ omit =
     sqlalchemy_upsert_kit/docs/*
     sqlalchemy_upsert_kit/tests/*
     sqlalchemy_upsert_kit/vendor/*
-    sqlalchemy_upsert_kit/_version.py
     sqlalchemy_upsert_kit/cli.py
     sqlalchemy_upsert_kit/paths.py
 

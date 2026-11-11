@@ -1,102 +1,82 @@
-# ==============================================================================
-# The [project] table defined by Official python.org
-#
-# Read: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
-# ==============================================================================
+# [project] table: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
 [project]
 name = "sqlalchemy_upsert_kit"
-# Increment version before each release - follow `semantic versioning <https://semver.org/>`_
-# Currently, poetry 2.1.X doesn't support dynamic versioning
-# (Read https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#version)
-# So this value has to be aligned with the one in ``sqlalchemy_upsert_kit/_version.py``
+# Bump before each release (https://semver.org/), then ``mise run inst`` to update ``uv.lock``.
 version = "0.1.1"
 description = "High-performance SQLAlchemy bulk upsert operations using temporary table staging - 20x faster than row-by-row approaches."
-# Read https://dev-exp-share.readthedocs.io/en/latest/search.html?q=Pick+An+Open+Source+License+For+Python+Project&check_keywords=yes&area=default
-# To pick a license and update the ``license``, ``classifier`` field in ``pyproject.toml``
-# And also update the ``LICENSE.txt`` file in the git repo.
+# An SPDX license expression (PEP 639); keep ``LICENSE.txt`` in sync.
+# Read: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license-and-license-files
+# Valid identifiers: https://spdx.org/licenses/
 license = "MIT"
 license-files = ["LICENSE.txt", "AUTHORS.rst"]
 authors = [
-    { name = "Sanhe Hu", email = "husanhe@email.com" },
+    { name = "Sanhe Hu", email = "husanhe@gmail.com" },
 ]
 maintainers = [
-    { name = "Sanhe Hu", email = "husanhe@email.com" },
+    { name = "Sanhe Hu", email = "husanhe@gmail.com" },
 ]
 keywords = []
 readme = "README.rst"
-requires-python = ">=3.9,<4.0"
-# Full list of classifiers: https://pypi.org/classifiers/
-classifier = [
+requires-python = ">=3.11,<4.0"
+# Read: https://pypi.org/classifiers/
+classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: MacOS",
     "Operating System :: Unix",
-    # Note: classfier like "Programming Language :: Python :: 3 :: Only",
-    # "Programming Language :: Python :: 3.X" is no longer needed,
-    # because we have ``requires-python`` field.
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 
-# ------------------------------------------------------------------------------
-# Core Dependencies
-# ------------------------------------------------------------------------------
+# --- Dependencies ---
+# Edit these lists, then ``mise run inst`` to update ``uv.lock`` and ``.venv``.
 dependencies = [
-    "sqlalchemy>=2.0.0,<3.0.0",
+    "sqlalchemy>=2.0.0,<3.0.0", # database toolkit and ORM
 ]
 
-# ------------------------------------------------------------------------------
-# Optional dependency that can be used in ``pip install ${your_project_name}[${feature_name}]``
-# Sometime this is also called "extras"
+# --- Optional dependencies (extras) ---
 # Read: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-optional-dependencies
-#
-# IMPORTANT: all optional dependencies has to be compatible with the "requires-python" field
-# ------------------------------------------------------------------------------
+# Each one must support every Python version in ``requires-python``.
 [project.optional-dependencies]
 
-# ------------------------------------------------------------------------------
-# Local Development dependenceies
-# ------------------------------------------------------------------------------
+# local development
 dev = [
-    "twine>=6.0.0,<7.0.0", # distribute package to PyPI
-    "wheel>=0.45.0,<1.0.0", # build wheel package
-    "build>=1.2.1,<2.0.0", # build source distribution
-    "rich>=13.8.1,<14.0.0", # pretty print
+    "rich>=14.3.4,<15.0.0",
 ]
 
-# ------------------------------------------------------------------------------
-# (Unit/Coverage/Integration/Load) Test dependenceies
-# ------------------------------------------------------------------------------
+# tests and coverage
 test = [
-    "pytest>=8.2.2,<9.0.0", # Testing framework
-    "pytest-cov>=6.0.0,<7.0.0", # Coverage reporting
-    "prettytable>=3.0.0,<4.0.0", # Pretty print table in terminal
+    "pytest>=9.1.1,<10.0.0",
+    "pytest-cov>=7.1.0,<8.0.0",
+    "prettytable>=3.0.0,<4.0.0", # pretty print tables in test output
 ]
 
-# ------------------------------------------------------------------------------
-# Documentation build dependenceies
-# ------------------------------------------------------------------------------
+# docs build
 doc = [
-    "Sphinx>=7.4.7,<8.0.0",
-    "sphinx-copybutton>=0.5.2,<1.0.0", # add copy button to code block
-    "sphinx-design>=0.6.1,<1.0.0", # add additional design pattern to sphinx
-    "sphinx-jinja>=2.0.2,<3.0.0", # enable jinja syntax in reStructuredText
-    "furo==2024.8.6", # the furo sphinx theme
-    "pygments>=2.18.0,<3.0.0", # syntax highlight
-    "ipython>=8.18.1,<8.19.0", # interactive Python
-    "nbsphinx>=0.8.12,<1.0.0", # add jupyter notebook in sphinx doc
-    "rstobj==1.2.1", # generate reStructuredText from Python code
-    "docfly==3.0.0", # automaticall generate .. toctree directives and API reference doc
+    "Sphinx>=8.2.3,<9.0.0", # held below 9 until its autodoc rewrite is verified
+    "sphinx-copybutton>=0.5.2,<1.0.0", # copy button on code blocks
+    "sphinx-design>=0.7.0,<1.0.0", # cards, tabs, grids
+    "sphinx-jinja>=2.0.2,<3.0.0", # jinja in reST
+    "furo==2025.12.19", # theme
+    "pygments>=2.18.0,<3.0.0", # syntax highlighting
+    "ipython>=8.18.1,<8.19.0", # notebook execution
+    "ipykernel>=7.3.0,<8.0.0", # notebook kernel
+    "nbsphinx>=0.9.8,<1.0.0", # notebooks as doc pages
+    "rstobj>=2.0.0,<3.0.0", # reST from Python
+    "docfly>=3.0.3,<4.0.0", # toctree and API reference
 ]
 
-# ------------------------------------------------------------------------------
-# Automation (devops) dependenceies
-# ------------------------------------------------------------------------------
-auto = [
+# mise tasks
+mise = [
+    "PyGithub>=2.8.0,<3.0.0", # GitHub API client
+    "httpx2>=2.13.1,<3.0.0", # Codecov and Read the Docs APIs
 ]
 
-# Quick Links
 [project.urls]
 Homepage = "https://github.com/MacHu-GWU/sqlalchemy_upsert_kit-project"
 Documentation = "https://sqlalchemy-upsert-kit.readthedocs.io/en/latest/"
@@ -105,47 +85,42 @@ Issues = "https://github.com/MacHu-GWU/sqlalchemy_upsert_kit-project/issues"
 Changelog = "https://github.com/MacHu-GWU/sqlalchemy_upsert_kit-project/blob/main/release-history.rst"
 Download = "https://pypi.org/pypi/sqlalchemy-upsert-kit#files"
 
-# For command line interface, read: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#creating-executable-scripts
+# Read: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#creating-executable-scripts
 [project.scripts]
 
-[tool.poetry.requires-plugins]
-poetry-plugin-export = ">=1.9.0,<2.0.0"
-
-[tool.poetry]
-# Files to include in the package distribution
-packages = [
-    { include = "sqlalchemy_upsert_kit", from = ".", to = "." }
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "sqlalchemy_upsert_kit*",
 ]
-# Files to exclude from the package
 exclude = [
-    "sqlalchemy_upsert_kit/tests/*",
-    "sqlalchemy_upsert_kit/docs/*",
-    "**/*.pyc",
-    "**/*.pyo",
+    "sqlalchemy_upsert_kit.tests",
+    "sqlalchemy_upsert_kit.tests.*",
+    "sqlalchemy_upsert_kit.docs",
+    "sqlalchemy_upsert_kit.docs.*",
 ]
 
-# python workflow tool config
-[tool.pywf]
-# The specific python version you use for local development
-dev_python = "3.11.8"
-# --- github.com
-github_account = "MacHu-GWU"
-# Create GitHub token in https://github.com/settings/tokens and put the token in
-# ``${HOME}/home_secret.json``
-github_token_field = "providers.github.accounts.sh.users.sh.secrets.dev.value"
-# --- codecov.io (for code coverage test report)
-codecov_account = "MacHu-GWU"
-# Create Codecov token in https://app.codecov.io/account/gh/${codecov_account}/access
-# and put the token in ``${HOME}/home_secret.json``
-codecov_token_field = "providers.codecov_io.accounts.sh.users.sh.secrets.dev.value"
-# --- readthedocs.org (for documentation hosting)
-# Create Readthedocs token in https://app.readthedocs.org/accounts/tokens/
-# and put the token at ``${HOME}/home_secret.json``
-readthedocs_token_field = "providers.readthedocs.accounts.sh.users.sh.secrets.dev.value"
-# Readthedocs project name, usually it is the same as your project name
-readthedocs_project_name = "sqlalchemy_upsert_kit"
+# --- ruff: ``mise run format`` / ``mise run lint`` ---
+[tool.ruff]
+extend-exclude = [
+    "sqlalchemy_upsert_kit/vendor",
+    ".claude/skills/*/assets", # templates, not valid Python
+]
 
-# Read: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#declaring-the-build-backend
+[tool.ruff.lint.per-file-ignores]
+# re-export modules
+"**/__init__.py" = ["F401"]
+"**/api.py" = ["F401"]
+
+# --- pytest 9+ native table ---
+# Read: https://docs.pytest.org/en/stable/reference/customize.html#pyproject-toml
+[tool.pytest]
+testpaths = ["tests"]
+# strict = true # only with a pinned pytest
+# filterwarnings = ["error"]
+# markers = ["slow: tests that take more than a few seconds"]
+
+# --- Build (``mise run build``); setuptools 77+ for PEP 639 ``license`` ---
 [build-system]
-requires = ["poetry-core>=2.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=77.0"]
+build-backend = "setuptools.build_meta"
