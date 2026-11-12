@@ -3,7 +3,7 @@
 name = "sqlalchemy_upsert_kit"
 # Bump before each release (https://semver.org/), then ``mise run inst`` to update ``uv.lock``.
 version = "0.1.1"
-description = "High-performance SQLAlchemy bulk upsert operations using temporary table staging - 20x faster than row-by-row approaches."
+description = "Fast SQLAlchemy bulk upsert (insert or ignore, replace, or merge) for SQLite and PostgreSQL, using temporary table staging - typically 5-20x faster than row-by-row upserts."
 # An SPDX license expression (PEP 639); keep ``LICENSE.txt`` in sync.
 # Read: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license-and-license-files
 # Valid identifiers: https://spdx.org/licenses/

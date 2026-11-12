@@ -58,6 +58,8 @@ x.y.z (Backlog)
 - Run the PostgreSQL tests locally in a container (``mise run psql-up`` / ``mise run psql-down``, Apple ``container`` installed by mise), and in CI against the PostgreSQL preinstalled on the GitHub-hosted runners.
 - Switch the build to setuptools and the project tooling to mise and uv, from the pywf open source template.
 - Add the ``maintain-sqlalchemy_upsert_kit`` maintenance skills for agents.
+- Add the ``pypi-sqlalchemy_upsert_kit`` Agent Skill, which documents the public API for AI coding agents.
+- Rewrite the user docs as runnable notebooks: Quick Start, Transactions and Errors, SQLite, and PostgreSQL pages, plus an updated Understanding UPSERT Operations page.
 
 
 0.1.1 (2025-06-02)

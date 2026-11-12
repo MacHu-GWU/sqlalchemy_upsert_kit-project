@@ -65,6 +65,11 @@ extensions = [
     "nbsphinx",
 ]
 
+# Never execute notebooks during the build: their committed outputs are rendered
+# as they are, so the hosted build needs no database (some pages use PostgreSQL).
+# Execute them locally before committing, see the pywf-oss-base nbsphinx reference.
+nbsphinx_execute = "never"
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
 
