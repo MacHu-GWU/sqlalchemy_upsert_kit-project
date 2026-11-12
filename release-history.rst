@@ -8,8 +8,8 @@ x.y.z (Backlog)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 **Features and Improvements**
 
-- (Planned for 0.3.1) Support tables with a composite primary key: conflicts are detected on all primary key columns together (``ON CONFLICT (a, b)``), so association tables of many-to-many relationships can be upserted too. Each record must have every primary key column, and no two records may share the same key combination.
-- (Planned for 0.3.1) Add an optional ``conflict_columns`` parameter to all three functions, to detect conflicts on a unique constraint instead of the primary key, such as ``email`` or ``(source, external_id)`` on a table whose primary key is an auto-increment id. It defaults to the primary key columns, and the named columns must match a unique index or unique constraint of the table exactly.
+- (Planned for 0.4.1) Support tables with a composite primary key: conflicts are detected on all primary key columns together (``ON CONFLICT (a, b)``), so association tables of many-to-many relationships can be upserted too. Each record must have every primary key column, and no two records may share the same key combination.
+- (Planned for a future release) Add an optional ``conflict_columns`` parameter to all three functions, to detect conflicts on a unique constraint instead of the primary key, such as ``email`` or ``(source, external_id)`` on a table whose primary key is an auto-increment id. It defaults to the primary key columns, and the named columns must match a unique index or unique constraint of the table exactly.
 
 **Minor Improvements**
 
