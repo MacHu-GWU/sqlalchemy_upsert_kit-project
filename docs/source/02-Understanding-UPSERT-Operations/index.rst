@@ -19,11 +19,11 @@ Take a ``users`` table with three rows, and three records to upsert: users 2 and
     * - ``(1, alice, alice@old.com)``
       -
     * - ``(2, bob, bob@old.com)``
-      - ``(2, Bob, bob@new.com)``
+      - ``(2, robert, bob@new.com)``
     * - ``(3, cathy, cathy@old.com)``
-      - ``(3, Cathy, cathy@new.com)``
+      - ``(3, catherine, cathy@new.com)``
     * -
-      - ``(4, Dave, dave@new.com)``
+      - ``(4, dave, dave@new.com)``
 
 .. list-table::
     :header-rows: 1
@@ -37,7 +37,7 @@ Take a ``users`` table with three rows, and three records to upsert: users 2 and
       - ``(2, bob, bob@old.com)``, ``(3, cathy, cathy@old.com)``
     * - :func:`insert_or_replace <sqlalchemy_upsert_kit.sqlite.insert_or_replace.insert_or_replace>`
       - overwritten to equal the record
-      - ``(2, Bob, bob@new.com)``, ``(3, Cathy, cathy@new.com)``
+      - ``(2, robert, bob@new.com)``, ``(3, catherine, cathy@new.com)``
     * - :func:`insert_or_merge <sqlalchemy_upsert_kit.sqlite.insert_or_merge.insert_or_merge>` with ``columns=["email"]``
       - only ``columns`` updated, the rest kept
       - ``(2, bob, bob@new.com)``, ``(3, cathy, cathy@new.com)``
