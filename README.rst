@@ -69,3 +69,17 @@ To upgrade to latest version:
 .. code-block:: console
 
     $ pip install --upgrade sqlalchemy-upsert-kit
+
+
+.. _use-with-ai-coding-agents:
+
+Use with AI Coding Agents
+------------------------------------------------------------------------------
+
+This repo ships an `Agent Skill <https://code.claude.com/docs/en/skills>`_ that documents the public API of ``sqlalchemy_upsert_kit``, so an AI coding agent such as Claude Code can use the library without reading its source. It lives in `.claude/skills/pypi-sqlalchemy_upsert_kit <https://github.com/MacHu-GWU/sqlalchemy_upsert_kit-project/tree/main/.claude/skills/pypi-sqlalchemy_upsert_kit>`_. To use it in your project, copy it into your project's ``.claude/skills/`` folder. Run this from your project's root:
+
+.. code-block:: console
+
+    $ git clone --depth 1 https://github.com/MacHu-GWU/sqlalchemy_upsert_kit-project.git /tmp/sqlalchemy_upsert_kit-project
+    $ mkdir -p .claude/skills
+    $ cp -R /tmp/sqlalchemy_upsert_kit-project/.claude/skills/pypi-sqlalchemy_upsert_kit .claude/skills/
