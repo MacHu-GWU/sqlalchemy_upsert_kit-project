@@ -52,7 +52,44 @@ Every finding below was probed against MySQL 8.4.13 before the backend was writt
 
 ---
 
-## 5. Not tested
+## 5. Decisions made with the user, and why
+
+The findings above were explained to the user, who decided each point below. Keep these decisions unless the user changes them.
+
+### 5.1 Ignore is a no-op update (option A)
+
+Three ways to leave a conflicting row alone were compared:
+
+| Option | Statement | Cost | Decision |
+| :--- | :--- | :--- | :--- |
+| A | `ON DUPLICATE KEY UPDATE <pk> = <table>.<pk>` | the row's `UPDATE` triggers fire, and it is locked until the transaction ends | **chosen** |
+| B | `INSERT IGNORE` | every error becomes a warning and the row is written anyway: the probe wrote a silently truncated string; a NULL becomes the default, a foreign key violation is skipped, and a conflict on another unique key is skipped | rejected: silent wrong data |
+| C | `INSERT ... SELECT ... WHERE NOT EXISTS (<the key in the target>)` | check, then write: two concurrent calls that both find a new key absent both insert it, and the second fails with `1062 Duplicate entry` | rejected: random failures under concurrency |
+
+Why A: it is the only option where the data is always right and a call never fails because of a concurrent one; its cost is a side effect, documented to users on the MySQL docs page. C fails for the same reason the library left JOIN-based writes in the 0.2 refactor (`02-architecture.md` section 5): only the native upsert decides atomically, row by row, whether a row conflicts.
+
+### 5.2 A conflict on another unique key is an error (option X)
+
+- **The user's rule:** a record that conflicts on a unique key other than the primary key is wrong data for this operation, so the call must raise and do nothing. The precise reason: the three strategies are defined on the primary key only (`01-scope.md` section 3); a record that matches one row by its primary key and another by a unique key has no defined outcome, and any automatic choice would be a guess.
+- SQLite and PostgreSQL already behave this way, because their `ON CONFLICT (<pk>)` raises for other keys. MySQL updates the other row instead, so the library checks before the upsert (section 3). The alternative, documenting it as a MySQL limitation (option Y), was rejected: users would get silent data corruption.
+- **The check runs after the staging table is loaded,** not with the `ValueError` checks before any SQL: whether a value is taken depends on the rows in the database.
+- **It raises `sqlalchemy.exc.IntegrityError`,** the error SQLite and PostgreSQL raise for the same input, so one `except IntegrityError` covers every backend. Its `orig` is `UniqueKeyConflictError`, with the key and the problem in its message.
+- **It checks the unique keys declared in the `Table`,** not the ones in the database. This matches how the library already trusts the `Table` (the primary key comes from `get_pk_column`), costs nothing on a table without other unique keys, and a reflected `Table` (`autoload_with`) has its database's indexes. Reading the indexes from `information_schema` on every call would also catch undeclared ones; the user left it for later.
+- The rule now holds for every backend: it is in the contract (`01-scope.md` section 3) and its `test_unique_key_*` tests.
+
+### 5.3 Driver, image, port, CI
+
+- **PyMySQL:** pure Python, so it installs on every OS and Python of the CI matrix without a compiler or MySQL client library (mysqlclient needs them). Its `rsa` extra (`cryptography`) is not required: the probe authenticated with MySQL 8.4's default `caching_sha2_password`, after `FLUSH PRIVILEGES` cleared the server's cache, without it. CI also authenticates without it. Add `PyMySQL[rsa]` to the extras only if that changes.
+- **`mysql:8.4`,** the LTS line, on port 43306, an unusual port like every local test database.
+- **CI uses the MySQL on the runner images,** for the same reasons as PostgreSQL: no image pulled from Docker Hub, and service containers run on Linux only.
+
+### 5.4 MariaDB is a separate backend, later
+
+MariaDB is not supported, and this backend is not tested against it. MariaDB's behavior differs from MySQL's in the areas this backend depends on (temporary tables, `VALUES()`, row counts), so it would be its own backend, added with the add-backend invoker after its own probe. The user plans it for a later release.
+
+---
+
+## 6. Not tested
 
 - MariaDB, and drivers other than PyMySQL.
 - Callers at the `READ COMMITTED` or `SERIALIZABLE` isolation level.

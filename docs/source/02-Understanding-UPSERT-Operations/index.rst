@@ -77,16 +77,19 @@ Upserting one row at a time costs one round trip and one statement per record. T
    - replace: ``DO UPDATE SET name = excluded.name, email = excluded.email`` (every non-key column of the records)
    - merge with ``columns=["email"]``: ``DO UPDATE SET email = excluded.email``
 
+   MySQL has no ``ON CONFLICT``: its statement is ``INSERT ... SELECT ... ON DUPLICATE KEY UPDATE``, with the same result (see :ref:`mysql-backend`).
+
 6. **Drop the staging table** and release the SAVEPOINT.
 
 For a large batch this is typically 5-20x faster than upserting row by row, and the database does the conflict detection with its primary key index.
 
-If any step fails, everything the call did is rolled back to the SAVEPOINT, including the staging table, and the exception propagates. Details, and runnable examples, are in :ref:`transactions-and-errors`.
+If any step fails, everything the call did is rolled back to the SAVEPOINT, the staging table is gone, and the exception propagates. Details, and runnable examples, are in :ref:`transactions-and-errors`.
 
 
 What Follows From It
 ------------------------------------------------------------------------------
-- **Rows are updated in place.** A conflicting row is never deleted and re-inserted. Update triggers fire; delete triggers and ``ON DELETE`` foreign key actions, such as ``CASCADE``, do not.
+- **Rows are updated in place.** A conflicting row is never deleted and re-inserted. Update triggers fire; delete triggers and ``ON DELETE`` foreign key actions, such as ``CASCADE``, do not. (On MySQL, ``insert_or_ignore`` also fires the update triggers of conflicting rows, without changing them.)
+- **Conflicts are on the primary key only.** A record that would break another unique key, such as a unique ``email`` that an existing row already has, raises ``sqlalchemy.exc.IntegrityError``, and the call changes nothing. It never updates that other row.
 - **Defaults apply to new rows.** A column the records leave out gets its ``default`` or ``server_default`` on the rows the call inserts.
 - **The counts add up.** The call returns ``(conflicting_rows, inserted_rows)``, and their sum is always the number of records.
 - **Concurrent calls are safe.** Each call has its own staging table, so calls never collide.
@@ -120,5 +123,8 @@ Each database has its own module with the same three functions, signatures and r
     * - PostgreSQL
       - ``sqlalchemy_upsert_kit.api.postgres``
       - psycopg 3, installed by the ``postgres`` extra. See :ref:`postgresql-backend`.
+    * - MySQL
+      - ``sqlalchemy_upsert_kit.api.mysql``
+      - MySQL 8.0+, PyMySQL, installed by the ``mysql`` extra. See :ref:`mysql-backend`.
 
-Both need SQLAlchemy 2.0.28 or later, and a synchronous engine. MySQL is not supported yet.
+All need SQLAlchemy 2.0.28 or later, and a synchronous engine. MariaDB is not supported yet.

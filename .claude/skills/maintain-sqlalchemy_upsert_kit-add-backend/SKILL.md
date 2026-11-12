@@ -16,8 +16,8 @@ Read ../maintain-sqlalchemy_upsert_kit-base/SKILL.md, then:
 
 1. **Pin down the backend, and stop for the user's yes.** Propose, one line each:
    - the subpackage name `<engine>` (`sqlalchemy_upsert_kit/<engine>/`, `api.<engine>`, `tests/<engine>/`, the extra) and the mise task short name;
-   - the driver and its version constraint (load `pywf-oss-base`, then read its uv and Dependencies reference);
-   - the official image for the local container, and its unusual port (never the database's default port);
+   - the driver and its version constraint (load `pywf-oss-base`, then read its uv and Dependencies reference). Prefer a driver that installs on every OS and Python of the CI matrix without a compiler or client library, as PyMySQL for MySQL;
+   - the official image for the local container (the database's long-term support line, when it has one), and its unusual port (never the database's default port);
    - how CI gets a server on each runner OS in the matrix, from the runner images' software list. If an OS has none, propose testing that backend on the other OS only.
 2. **Probe the dialect before writing code.** Start the container (step 6 can come first), and check against a throwaway table:
    - the native upsert from a `SELECT` (`ON CONFLICT`, `ON DUPLICATE KEY UPDATE`, `MERGE`), and what its row count counts for inserted, updated, and ignored rows;
@@ -29,6 +29,8 @@ Read ../maintain-sqlalchemy_upsert_kit-base/SKILL.md, then:
 
    Write the probe as a throwaway script outside the repo, against the container. Explain each finding to the user in full (the SQL, the result, what it breaks, the fix), not as terse bullets.
 
+   Where the database cannot keep the contract exactly (`01-scope.md`), list the options with their costs, recommend one, and let the user decide, as for MySQL's ignore statement (`05-backend-mysql.md` section 5). Never pick a statement that turns errors into warnings, such as `INSERT IGNORE`, and never write with check-then-write JOINs instead of the native upsert (`02-architecture.md` section 6).
+
    Report the findings to the user before step 4. They become the backend reference in step 9, and decide which hooks step 4 overrides.
 3. **Scaffold** the subpackage with `pywf-oss-add-module`: `__init__.py` with a module docstring and **no imports** (`02-architecture.md` section 1), `api.py`, `executor.py`, and the three public function modules, modeled on `sqlalchemy_upsert_kit/mysql/`. Add `from .<engine> import api as <engine>` to `sqlalchemy_upsert_kit/api.py`, and touch the new names in `tests/test_api.py`.
 4. **Implement** the backend's `UpsertExecutor` subclass: `build_upsert()` always, and `begin_transaction()` or any other hook only if the probe showed it must differ (`02-architecture.md` section 2). The public function modules keep the signatures of the other backends. If the probe found that something in `core/` is wrong for this database, make it a hook instead of a branch on the dialect.
@@ -37,7 +39,7 @@ Read ../maintain-sqlalchemy_upsert_kit-base/SKILL.md, then:
 7. **Tests:** create `tests/<engine>/` with `all.py`, a `conftest.py` with the `db_url` fixture, a test file for the executor's hooks, and the three strategy test files, each a subclass of the contract (`07-testing.md` section 1). Add the backend's branch to `staging_tables()` in `sqlalchemy_upsert_kit/tests/contract.py`. A scenario only this database needs goes into its own test file; one every backend needs goes into the contract. Reach 100% with `pywf-oss-write-test`, and check that the tests catch the bugs the probe found (`07-testing.md` section 5).
 8. **CI:** add the steps that start the runner's server and export `SQLALCHEMY_UPSERT_KIT_<ENGINE>_URL` to `.github/workflows/main.yml`. Pushing runs CI: push only after the user's yes, then check the run, and fix failures with `pywf-oss-fix-ci`.
 9. **Maintenance family,** in the same change (load `pywf-oss-write-maintain-skill`):
-   - add `NN-backend-<engine>.md` after the last backend reference, modeled on `05-backend-mysql.md`: its transaction behavior, upsert statement and counts, and what is untested, never the implementation. Renumber the later references and every citation of them;
+   - add `NN-backend-<engine>.md` after the last backend reference, modeled on `05-backend-mysql.md`: its transaction behavior, upsert statement and counts, the decisions the user made and why, and what is untested, never the implementation. Renumber the later references and every citation of them;
    - update `02-architecture.md` (layout, and any new reason for the per-backend split), `06-local-db-tasks.md` (the tasks table and settings), `07-testing.md` (a section for the backend), and the base `SKILL.md` paragraph;
    - in this skill's Read list, point to the new backend reference instead of `05-backend-mysql.md` if it becomes the better model.
 10. **Finish:** `mise run format`, `mise run lint`, `mise run cov`, and `mise run build-doc` pass. Update the "Backends" line in `CLAUDE.md`. Name the next steps for the user: the changelog (`pywf-oss-changelog`) and a user docs page (`pywf-oss-write-doc`).

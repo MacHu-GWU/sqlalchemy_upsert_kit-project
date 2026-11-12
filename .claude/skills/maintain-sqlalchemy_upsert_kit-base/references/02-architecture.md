@@ -75,3 +75,15 @@ The user chose this over one module that branches on the dialect:
 ## 5. Why the shared part grew (0.2 refactor)
 
 The first PostgreSQL version kept the SQLite design (regular staging table cloned with `Table.to_metadata`, delete then insert for replace and merge, cleanup through a fresh connection) and added its own strategies. A review then found bugs in the SQLite design (foreign keys and named indexes broke the clone, a missing primary key overwrote rows, staging tables leaked) and contract divergences between the backends. The fix made both backends use a native `INSERT ... SELECT ... ON CONFLICT` and the same SAVEPOINT workflow, at which point the strategies, validation and staging table were identical, so, by the rule in section 2, they moved to `core/`.
+
+---
+
+## 6. Why a staging table plus one native upsert, not JOIN-based writes
+
+Every backend writes with the same two parts, each with its own job:
+
+- **The staging table makes it fast:** all records go to the database in one `executemany`, and every later statement works on the whole batch, instead of one round trip per record.
+- **One native upsert makes it correct:** `ON CONFLICT` or `ON DUPLICATE KEY UPDATE` lets the database decide, atomically for each row, whether it conflicts. A write built from JOINs (an anti-join insert, or the delete-then-insert of the first SQLite design) checks first and writes later, so a concurrent call can insert the same key in between and make the write fail or lose data.
+- **JOINs only count:** `UpsertExecutor.count_conflicts` joins the staging table to the target to return `(conflicting_rows, inserted_rows)`, and the MySQL unique key check joins them to find taken values. Neither writes.
+
+The user asked about this while choosing MySQL's ignore statement; the answer is recorded here because it holds for every backend.

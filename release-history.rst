@@ -19,6 +19,31 @@ x.y.z (Backlog)
 **Miscellaneous**
 
 
+0.3.1 (2026-11-12)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+**Features and Improvements**
+
+- Add MySQL support (MySQL 8.0+), with the same three functions, signatures and results as SQLite and PostgreSQL:
+    - ``sqlalchemy_upsert_kit.api.mysql``
+    - ``sqlalchemy_upsert_kit.api.mysql.insert_or_ignore``
+    - ``sqlalchemy_upsert_kit.api.mysql.insert_or_replace``
+    - ``sqlalchemy_upsert_kit.api.mysql.insert_or_merge``
+- Add the ``mysql`` extra, which installs the PyMySQL driver: ``pip install "sqlalchemy-upsert-kit[mysql]"``.
+- On MySQL, a record that would break a unique key other than the primary key (the same unique value as an existing row, or as another record) raises ``sqlalchemy.exc.IntegrityError`` and changes nothing, as on SQLite and PostgreSQL. MySQL's own ``ON DUPLICATE KEY UPDATE`` would silently update that other row instead. The error's ``orig`` is the new ``sqlalchemy_upsert_kit.exc.UniqueKeyConflictError``. Only unique keys declared in the ``Table`` are checked.
+- On MySQL, ``insert_or_ignore`` leaves conflicting rows unchanged with a no-op update, so their ``UPDATE`` triggers fire; it does not use ``INSERT IGNORE``, which would turn errors such as a too long value into warnings and write the row anyway.
+
+**Minor Improvements**
+
+- The rule that a conflict on any unique key other than the primary key is an error, and never an update, is now part of the behavior every backend is tested against.
+
+**Miscellaneous**
+
+- Add backend hooks to ``sqlalchemy_upsert_kit.core.executor.UpsertExecutor`` for how the staging table is dropped and cleaned up after a failure, how rows are counted, the identifier length limit, and a check of other unique keys. SQLite and PostgreSQL keep their behavior.
+- Run the MySQL tests locally in a container (``mise run mysql-up`` / ``mise run mysql-down``), which ``mise run test`` and ``mise run cov`` start along with PostgreSQL, and in CI against the MySQL on the GitHub-hosted runners (8.0 on Ubuntu, 8.4 on Windows).
+- Add a MySQL docs page, and mention MySQL and the driver extras in the README and the other docs pages.
+- Record MySQL's behavior, and why each part of the backend is built the way it is, in the ``maintain-sqlalchemy_upsert_kit`` maintenance skills.
+
+
 0.2.1 (2026-11-11)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 **Breaking Changes**

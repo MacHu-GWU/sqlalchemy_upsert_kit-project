@@ -50,13 +50,13 @@ Welcome to ``sqlalchemy_upsert_kit`` Documentation
 .. image:: https://sqlalchemy-upsert-kit.readthedocs.io/en/latest/_static/sqlalchemy_upsert_kit-logo.png
     :target: https://sqlalchemy-upsert-kit.readthedocs.io/en/latest/
 
-``sqlalchemy_upsert_kit`` provides fast bulk upsert operations for SQLAlchemy applications, on SQLite and PostgreSQL. It offers three strategies:
+``sqlalchemy_upsert_kit`` provides fast bulk upsert operations for SQLAlchemy applications, on SQLite, PostgreSQL and MySQL. It offers three strategies:
 
 - ``insert_or_ignore``: insert new records, and leave existing rows alone.
 - ``insert_or_replace``: insert new records, and overwrite existing rows with the records.
 - ``insert_or_merge``: insert new records, and update only chosen columns of existing rows.
 
-Each call loads the records into a temporary staging table and writes them with one native ``INSERT ... ON CONFLICT`` statement, typically 5-20x faster than row-by-row upserts on large batches, which suits ETL, data synchronization, and other bulk loads. Every call is atomic, and can run in its own transaction or inside yours.
+Each call loads the records into a temporary staging table and writes them with one native upsert statement (``INSERT ... ON CONFLICT``, or ``ON DUPLICATE KEY UPDATE`` on MySQL), typically 5-20x faster than row-by-row upserts on large batches, which suits ETL, data synchronization, and other bulk loads. Every call is atomic, and can run in its own transaction or inside yours.
 
 
 .. _install:
@@ -69,6 +69,13 @@ Install
 .. code-block:: console
 
     $ pip install sqlalchemy-upsert-kit
+
+For PostgreSQL or MySQL, also install the driver, with the ``postgres`` or ``mysql`` extra:
+
+.. code-block:: console
+
+    $ pip install "sqlalchemy-upsert-kit[postgres]"
+    $ pip install "sqlalchemy-upsert-kit[mysql]"
 
 To upgrade to latest version:
 

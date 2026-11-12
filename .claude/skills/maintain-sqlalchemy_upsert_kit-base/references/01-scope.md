@@ -48,4 +48,5 @@ These semantics are the contract: the same resulting rows and counts on every ba
 ## 4. Out of scope
 
 - **Stores that SQLAlchemy does not drive,** such as MongoDB. Their upsert has nothing in common with this staging-table design; they belong in a separate library.
+- **MariaDB** is not a supported backend: the MySQL backend is not tested against it. It would be a backend of its own, which the user plans for a later release.
 - **Not supported today:** composite primary keys and conflict targets other than the primary key (`get_pk_column`), and per-row results (the functions return counts only). Adding either changes the contract in section 3 for every backend, so ask the user first.
