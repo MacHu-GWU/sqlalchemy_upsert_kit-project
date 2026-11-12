@@ -81,6 +81,18 @@ def make_staging_name(
     return f"temp_{uuid.uuid4().hex[:8]}_{table.name}"[:max_length]
 
 
+#: Table options that decide how values compare, copied to the staging table:
+#: ``<dialect>_<option>``, such as ``mysql_collate``.
+COMPARISON_OPTIONS = (
+    "charset",
+    "default_charset",
+    "character_set",
+    "default_character_set",
+    "collate",
+    "default_collate",
+)
+
+
 def make_staging_table(
     table: sa.Table,
     metadata: sa.MetaData,
@@ -89,11 +101,13 @@ def make_staging_table(
     """
     Define the ``TEMPORARY`` staging table for ``table``.
 
-    It copies each writable column's name, key, type and defaults, and marks the
-    primary key, but nothing else: no indexes, unique constraints, foreign keys,
-    sequences or identities, which could collide with the target's names or
-    reference tables a temporary table may not reference. A temporary table is
-    private to its connection, so concurrent upserts never see each other's.
+    It copies each writable column's name, key, type and defaults, marks the
+    primary key, and copies the table's character set and collation options
+    (:data:`COMPARISON_OPTIONS`), so staged values compare as in the target. It
+    copies nothing else: no indexes, unique constraints, foreign keys, sequences
+    or identities, which could collide with the target's names or reference
+    tables a temporary table may not reference. A temporary table is private to
+    its connection, so concurrent upserts never see each other's.
 
     :param table: The target table
     :param metadata: Metadata that holds the staging table definition
@@ -111,4 +125,9 @@ def make_staging_table(
         if col.default is not None and not col.default.is_sequence:
             kwargs["default"] = col.default.arg
         columns.append(sa.Column(col.name, col.type, **kwargs))
-    return sa.Table(name, metadata, *columns, prefixes=["TEMPORARY"])
+    options = {
+        key: value
+        for key, value in table.kwargs.items()
+        if key.split("_", 1)[-1] in COMPARISON_OPTIONS
+    }
+    return sa.Table(name, metadata, *columns, prefixes=["TEMPORARY"], **options)

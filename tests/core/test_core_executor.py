@@ -82,6 +82,31 @@ def test_default_hooks(engine):
     assert UpsertExecutor.rowcount_counts_inserts is True
 
 
+class BrokenCleanupExecutor(SqliteUpsertExecutor):
+    def cleanup_after_rollback(self, conn, staging):
+        raise RuntimeError("connection lost")
+
+
+def test_failed_cleanup_keeps_the_error(engine):
+    """
+    If the cleanup after a failure fails too, the original error is raised,
+    with the cleanup error as a note.
+    """
+    executor = BrokenCleanupExecutor(
+        engine=engine,
+        table=t_record,
+        values=INPUT,
+        strategy="replace",
+        fail_at="upsert",
+    )
+    with pytest.raises(UpsertTestError) as exc_info:
+        executor.run()
+    assert exc_info.value.__notes__ == [
+        "cleanup after the rollback also failed: RuntimeError('connection lost')"
+    ]
+    assert read_rows(engine) == EXISTING_ROWS
+
+
 def test_run_empty_values(engine):
     assert new_executor(engine, values=[]).run() == (0, 0)
 

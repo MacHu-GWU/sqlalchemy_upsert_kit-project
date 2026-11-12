@@ -35,8 +35,8 @@ sqlalchemy_upsert_kit/
 
 - **Validation** (`validation.py`): records and `columns` are checked before any SQL runs, so bad input fails the same way on every backend.
 - **Strategy semantics** (`resolve_update_keys`): a strategy is just the set of column keys it overwrites on conflict: none (ignore), every staged non-key column (replace), or `columns` minus the key (merge).
-- **The staging table** (`schema.py`): `TEMPORARY`, writable columns only, keys kept, a random name cut to the dialect's identifier limit.
-- **The workflow** (`UpsertExecutor.run_on`): `begin_transaction()`, then inside one SAVEPOINT: create the staging table, load it, `check_unique_keys()`, count conflicts (when something is updated, or the row count cannot tell inserted rows apart), run the upsert, `drop_staging()`. Any error rolls back to the SAVEPOINT, calls `cleanup_after_rollback()`, and re-raises.
+- **The staging table** (`schema.py`): `TEMPORARY`, writable columns only, keys kept, the table's character set and collation options copied (so values compare as in the target), a random name cut to the identifier limit.
+- **The workflow** (`UpsertExecutor.run_on`): `begin_transaction()`, then inside one SAVEPOINT: create the staging table, load it, `check_unique_keys()`, count conflicts (when something is updated, or the row count cannot tell inserted rows apart), run the upsert, `check_after_upsert()`, `drop_staging()`. Any error rolls back to the SAVEPOINT, calls `cleanup_after_rollback()` (whose own failure is added to the original error as a note), and re-raises.
 
 **Each backend** holds only what its database does differently, as overrides of `UpsertExecutor`:
 
@@ -45,7 +45,8 @@ sqlalchemy_upsert_kit/
 | `build_upsert(staging)` (abstract) | the one statement that copies the staged rows into the target | none | sqlite: `INSERT ... SELECT ... WHERE true ON CONFLICT`; postgres: `INSERT ... SELECT ... ON CONFLICT`; mysql: `INSERT ... SELECT ... ON DUPLICATE KEY UPDATE` |
 | `begin_transaction(conn)` | make sure a real transaction is open before the SAVEPOINT | nothing | sqlite: `BEGIN IMMEDIATE` when the driver has none |
 | `max_identifier_length()` | the limit the generated staging name is cut to | the dialect's | mysql: 64 (the dialect says 255) |
-| `check_unique_keys(conn, staging)` | reject records that break a unique key other than the primary key | nothing (the upsert raises) | mysql: two queries per unique key |
+| `check_unique_keys(conn, staging)` | before the upsert, reject records that break a unique key other than the primary key | nothing (the upsert raises) | mysql: two queries per declared unique key |
+| `check_after_upsert(conn, staging)` | after the upsert, raise if it did not write every record | nothing | mysql: any record whose primary key is missing was lost to another row |
 | `rowcount_counts_inserts` (class attribute) | whether the upsert's row count is exact; if False, conflicts are always counted first | True | mysql: False (`CLIENT_FOUND_ROWS`) |
 | `drop_staging(conn, staging)` | drop the staging table without committing | `Table.drop()` | mysql: `DROP TEMPORARY TABLE` |
 | `cleanup_after_rollback(conn, staging)` | after a failure, remove what the rollback did not | nothing | mysql: `DROP TEMPORARY TABLE IF EXISTS` |

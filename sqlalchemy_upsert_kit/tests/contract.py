@@ -64,6 +64,18 @@ t_child = sa.Table(
     sa.Column("name", sa.String(50)),
 )
 
+# A composite unique key, and a unique index (not a constraint) on another column.
+t_pair = sa.Table(
+    "pairs",
+    metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=False),
+    sa.Column("a", sa.Integer),
+    sa.Column("b", sa.Integer),
+    sa.Column("tag", sa.String(20)),
+    sa.UniqueConstraint("a", "b"),
+)
+sa.Index("ux_pairs_tag", t_pair.c.tag, unique=True)
+
 t_pk_only = sa.Table(
     "pk_only",
     metadata,
@@ -98,6 +110,9 @@ SEEDS = {
         {"id": 10, "parent_id": 1, "name": "c10"},
         {"id": 11, "parent_id": 2, "name": "c11"},
     ],
+    t_pair: [
+        {"id": 1, "a": 1, "b": 1, "tag": "t1"},
+    ],
     t_pk_only: [
         {"id": 1},
     ],
@@ -112,6 +127,7 @@ MERGE_COLUMNS = {
     t_rich.name: ["sel"],
     t_parent.name: ["name"],
     t_child.name: ["name"],
+    t_pair.name: ["b"],
     t_pk_only.name: ["id"],
     t_long.name: ["name"],
 }
@@ -450,6 +466,55 @@ class StrategyContract:
             row_z = ("Z", "sz", "new", 7, 14, "lz")
             assert read_rows(engine, t_rich) == [rows_before[0], row_b, row_z]
         assert_no_staging(engine)
+
+    def test_composite_unique_key_partly_written(self, engine):
+        """
+        Merge writes only ``b`` of the unique key ``(a, b)``: row 1 keeps its
+        ``a`` and becomes ``(1, 2)``, the value the new record 2 has, so merge
+        is an error. Replace writes ``a`` too (row 1 becomes ``(9, 2)``), and
+        ignore writes nothing, so both succeed.
+        """
+        values = [
+            {"id": 1, "a": 9, "b": 2, "tag": "t1"},
+            {"id": 2, "a": 1, "b": 2, "tag": "t2"},
+        ]
+        rows_before = read_rows(engine, t_pair)
+        if self.strategy == "merge":
+            with pytest.raises(sa.exc.IntegrityError):
+                self.call(engine, table=t_pair, values=values)
+            assert read_rows(engine, t_pair) == rows_before
+        else:
+            assert self.call(engine, table=t_pair, values=values) == (1, 1)
+            row_1 = {
+                "ignore": (1, 1, 1, "t1"),
+                "replace": (1, 9, 2, "t1"),
+            }[self.strategy]
+            assert read_rows(engine, t_pair) == [row_1, (2, 1, 2, "t2")]
+        assert_no_staging(engine)
+
+    def test_unique_index(self, engine):
+        """
+        A unique index counts as a unique key, like a unique constraint.
+        """
+        values = [{"id": 2, "a": 5, "b": 5, "tag": "t1"}]
+        rows_before = read_rows(engine, t_pair)
+        with pytest.raises(sa.exc.IntegrityError):
+            self.call(engine, table=t_pair, values=values)
+        assert read_rows(engine, t_pair) == rows_before
+
+    def test_unique_key_nulls(self, engine):
+        """
+        NULLs never conflict: records whose unique columns are all NULL, or
+        partly NULL, are inserted.
+        """
+        values = [
+            {"id": 2, "a": None, "b": None, "tag": None},
+            {"id": 3, "a": None, "b": None, "tag": None},
+            {"id": 4, "a": 1, "b": None, "tag": None},
+            {"id": 5, "a": 1, "b": None, "tag": None},
+        ]
+        assert self.call(engine, table=t_pair, values=values) == (0, 4)
+        assert len(read_rows(engine, t_pair)) == 5
 
     def test_foreign_keys(self, engine):
         """

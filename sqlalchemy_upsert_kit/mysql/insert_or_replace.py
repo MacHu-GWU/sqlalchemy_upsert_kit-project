@@ -37,11 +37,6 @@ def insert_or_replace(
     :class:`sqlalchemy.exc.IntegrityError` and changes nothing, as on the other
     databases; MySQL itself would update the other row instead.
 
-    A record that would break a unique key other than the primary key (the
-    same unique value as an existing row, or as another record) raises
-    :class:`sqlalchemy.exc.IntegrityError` and changes nothing, as on the other
-    databases; MySQL itself would update the other row instead.
-
     Runs in its own transaction (auto-managed: ``conn`` and ``trans`` are None), or
     inside the caller's (user-managed: both given; the caller commits or rolls
     back). Either way, a failure undoes everything the call did and leaves no

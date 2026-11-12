@@ -10,7 +10,6 @@ x.y.z (Backlog)
 
 - (Planned for 0.3.1) Support tables with a composite primary key: conflicts are detected on all primary key columns together (``ON CONFLICT (a, b)``), so association tables of many-to-many relationships can be upserted too. Each record must have every primary key column, and no two records may share the same key combination.
 - (Planned for 0.3.1) Add an optional ``conflict_columns`` parameter to all three functions, to detect conflicts on a unique constraint instead of the primary key, such as ``email`` or ``(source, external_id)`` on a table whose primary key is an auto-increment id. It defaults to the primary key columns, and the named columns must match a unique index or unique constraint of the table exactly.
-- (Planned for a future release) Add MySQL support: ``sqlalchemy_upsert_kit.api.mysql``, with the same three functions and signatures as SQLite and PostgreSQL.
 
 **Minor Improvements**
 
@@ -29,16 +28,18 @@ x.y.z (Backlog)
     - ``sqlalchemy_upsert_kit.api.mysql.insert_or_replace``
     - ``sqlalchemy_upsert_kit.api.mysql.insert_or_merge``
 - Add the ``mysql`` extra, which installs the PyMySQL driver: ``pip install "sqlalchemy-upsert-kit[mysql]"``.
-- On MySQL, a record that would break a unique key other than the primary key (the same unique value as an existing row, or as another record) raises ``sqlalchemy.exc.IntegrityError`` and changes nothing, as on SQLite and PostgreSQL. MySQL's own ``ON DUPLICATE KEY UPDATE`` would silently update that other row instead. The error's ``orig`` is the new ``sqlalchemy_upsert_kit.exc.UniqueKeyConflictError``. Only unique keys declared in the ``Table`` are checked.
+- On MySQL, a record that would break a unique key other than the primary key (the same unique value as an existing row, or as another record) raises ``sqlalchemy.exc.IntegrityError`` and changes nothing, as on SQLite and PostgreSQL. MySQL's own ``ON DUPLICATE KEY UPDATE`` would silently update that other row instead. The error's ``orig`` is the new ``sqlalchemy_upsert_kit.exc.UniqueKeyConflictError``. The unique keys declared in the ``Table`` are checked before the write, with a message that names the key; any other case (a unique index only the database has, or a row committed after your transaction's first read) is caught after the write, which is then undone.
 - On MySQL, ``insert_or_ignore`` leaves conflicting rows unchanged with a no-op update, so their ``UPDATE`` triggers fire; it does not use ``INSERT IGNORE``, which would turn errors such as a too long value into warnings and write the row anyway.
 
 **Minor Improvements**
 
-- The rule that a conflict on any unique key other than the primary key is an error, and never an update, is now part of the behavior every backend is tested against.
+- The rule that a conflict on any unique key other than the primary key is an error, and never an update, is now part of the behavior every backend is tested against, including composite unique keys, unique indexes, and NULL values.
+- The staging table now copies the target table's character set and collation options, such as ``mysql_collate``, so staged values compare as in the target.
+- When the cleanup after a failed call fails too, such as on a lost connection, the original error is raised, with the cleanup error added as a note.
 
 **Miscellaneous**
 
-- Add backend hooks to ``sqlalchemy_upsert_kit.core.executor.UpsertExecutor`` for how the staging table is dropped and cleaned up after a failure, how rows are counted, the identifier length limit, and a check of other unique keys. SQLite and PostgreSQL keep their behavior.
+- Add backend hooks to ``sqlalchemy_upsert_kit.core.executor.UpsertExecutor`` for how the staging table is dropped and cleaned up after a failure, how rows are counted, the identifier length limit, and checks of other unique keys before and after the upsert. SQLite and PostgreSQL keep their behavior.
 - Run the MySQL tests locally in a container (``mise run mysql-up`` / ``mise run mysql-down``), which ``mise run test`` and ``mise run cov`` start along with PostgreSQL, and in CI against the MySQL on the GitHub-hosted runners (8.0 on Ubuntu, 8.4 on Windows).
 - Add a MySQL docs page, and mention MySQL and the driver extras in the README and the other docs pages.
 - Record MySQL's behavior, and why each part of the backend is built the way it is, in the ``maintain-sqlalchemy_upsert_kit`` maintenance skills.

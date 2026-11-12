@@ -82,6 +82,25 @@ def test_make_staging_table():
     assert not make_staging_table(t_child, sa.MetaData(), "stg").foreign_keys
 
 
+def test_make_staging_table_copies_comparison_options():
+    """
+    Character set and collation options are copied, other table options not.
+    """
+    table = sa.Table(
+        "t",
+        sa.MetaData(),
+        sa.Column("id", sa.String(5), primary_key=True),
+        mysql_collate="utf8mb4_bin",
+        mysql_default_charset="utf8mb4",
+        mysql_engine="MyISAM",
+    )
+    staging = make_staging_table(table, sa.MetaData(), "stg")
+    assert dict(staging.kwargs) == {
+        "mysql_collate": "utf8mb4_bin",
+        "mysql_default_charset": "utf8mb4",
+    }
+
+
 def test_make_staging_table_skips_sequences():
     table = sa.Table(
         "t",

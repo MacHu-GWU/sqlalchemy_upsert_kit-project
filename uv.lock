@@ -1990,7 +1990,7 @@ wheels = [
 
 [[package]]
 name = "sqlalchemy-upsert-kit"
-version = "0.2.1"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "sqlalchemy" },

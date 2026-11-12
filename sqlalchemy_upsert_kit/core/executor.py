@@ -13,6 +13,7 @@ on one connection::
       check_unique_keys()          # backend hook: nothing by default
       count the conflicting rows   # when rowcount cannot tell them apart
       INSERT ... SELECT ... ON CONFLICT   # backend hook: build_upsert()
+      check_after_upsert()         # backend hook: nothing by default
       drop_staging()               # backend hook
     RELEASE SAVEPOINT              # on error: ROLLBACK TO SAVEPOINT,
                                    # cleanup_after_rollback(), then re-raise
@@ -28,7 +29,8 @@ delays ``BEGIN`` (:meth:`begin_transaction`), DDL that commits or is not undone
 by a rollback (:meth:`drop_staging`, :meth:`cleanup_after_rollback`), a wrong
 identifier limit (:meth:`max_identifier_length`), a row count that does not
 tell inserted rows apart (:attr:`rowcount_counts_inserts`), or an upsert that
-does not reject other unique key conflicts (:meth:`check_unique_keys`).
+does not reject other unique key conflicts (:meth:`check_unique_keys`,
+:meth:`check_after_upsert`).
 """
 
 import typing as T
@@ -162,6 +164,13 @@ class UpsertExecutor(abc.ABC):
         ``ON CONFLICT (<pk>)`` upsert raises such errors itself.
         """
 
+    def check_after_upsert(self, conn: sa.Connection, staging: sa.Table) -> None:
+        """
+        Raise after the upsert, still inside the SAVEPOINT, if it did not write
+        every record as it should; the rollback then undoes it. The default
+        does nothing.
+        """
+
     def drop_staging(self, conn: sa.Connection, staging: sa.Table) -> None:
         """
         Drop the staging table after the upsert, inside the SAVEPOINT, without
@@ -230,10 +239,16 @@ class UpsertExecutor(abc.ABC):
                     # DO NOTHING's rowcount is exactly the inserted rows.
                     inserted = res.rowcount
                     conflicts = len(self.values) - inserted
+                self.check_after_upsert(conn, staging)
                 self.maybe_fail("drop_staging")
                 self.drop_staging(conn, staging)
-        except Exception:
-            self.cleanup_after_rollback(conn, staging)
+        except Exception as e:
+            try:
+                self.cleanup_after_rollback(conn, staging)
+            except Exception as cleanup_error:
+                # Keep the error that made the call fail; a broken connection
+                # can make the cleanup fail too.
+                e.add_note(f"cleanup after the rollback also failed: {cleanup_error!r}")
             raise
         finally:
             self.metadata.remove(staging)
