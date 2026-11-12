@@ -1,5 +1,5 @@
 ---
-description: "The package architecture: what lives in sqlalchemy_upsert_kit/core/ and what in each sqlalchemy_upsert_kit/<engine>/ subpackage, the hooks a backend overrides, the api.<engine> namespaces and driver extras, and why the code is split per backend instead of one module branching on the dialect. Read before moving code between core and a backend, or adding shared logic."
+description: "The package architecture: what lives in sqlalchemy_upsert_kit/core/ (validation, staging table, the SAVEPOINT workflow) and what in each sqlalchemy_upsert_kit/<engine>/ subpackage (the transaction hook and the upsert statement), the api.<engine> namespaces and driver extras, why backends are separate subpackages, and why the shared part grew. Read before moving code between core and a backend, or adding shared logic."
 ---
 
 # Architecture: Core and Backends
@@ -10,61 +10,62 @@ description: "The package architecture: what lives in sqlalchemy_upsert_kit/core
 
 ```text
 sqlalchemy_upsert_kit/
-├── core/executor.py    # UpsertExecutor: the dialect-agnostic workflow
-├── utils.py            # get_pk_name, get_temp_table_name, clone_temp_table
-├── exc.py              # UpsertTestError, raised by the _raise_on_* test flags
-├── sqlite/             # one backend
-│   ├── insert_or_ignore.py / insert_or_replace.py / insert_or_merge.py
+├── core/
+│   ├── schema.py       # get_pk_column, get_writable_columns, make_staging_name, make_staging_table
+│   ├── validation.py   # validate_records, resolve_update_keys
+│   └── executor.py     # UpsertExecutor: the workflow; FAIL_STEPS
+├── exc.py              # UpsertTestError, raised by the _fail_at test hook
+├── sqlite/
+│   ├── executor.py     # SqliteUpsertExecutor
+│   ├── insert_or_ignore.py / insert_or_replace.py / insert_or_merge.py   # the public functions
 │   └── api.py          # exposed as api.sqlite
-├── postgres/           # another backend
-│   ├── executor.py     # PostgresUpsertExecutor: what PostgreSQL does differently
-│   ├── insert_or_ignore.py / insert_or_replace.py / insert_or_merge.py
-│   └── api.py          # exposed as api.postgres
+├── postgres/           # the same files: PostgresUpsertExecutor, api.postgres
 └── api.py              # one line per backend: from .<engine> import api as <engine>
 ```
 
-The subpackage name is the backend name used everywhere else: the local database mise tasks, the test folder `tests/<engine>/`, and the `pyproject.toml` extra. PostgreSQL's is `postgres`; its mise tasks use the shorter `psql`.
+- The subpackage name is the backend name used everywhere else: the local database mise tasks, the test folder `tests/<engine>/`, and the `pyproject.toml` extra. PostgreSQL's is `postgres`; its mise tasks use the shorter `psql`.
+- **A backend's `__init__.py` imports nothing**, and users import from `api`. Importing SQLAlchemy while coverage starts breaks SQLAlchemy 2.1 statement compilation (`'InternalTraversal' object is not callable`; 2.0.44 is fine). A per-module coverage run (`run_cov_test` with `module="sqlalchemy_upsert_kit.sqlite.insert_or_ignore"`) makes coverage import the parent package at start, so a parent that imports SQLAlchemy breaks that run.
 
 ---
 
 ## 2. What goes where
 
-**`core/executor.py`** holds only the workflow, which is the same for every database: `UpsertExecutor.run()` picks the transaction mode, `execute_operation()` creates the staging table, loads it, calls the strategy, and drops it, and the failure path rolls back and cleans up. It holds **no strategy SQL** and imports no dialect.
+**`core/`** holds everything that is the same on every database:
 
-**Each backend subpackage** holds everything its database does differently:
+- **Validation** (`validation.py`): records and `columns` are checked before any SQL runs, so bad input fails the same way on every backend.
+- **Strategy semantics** (`resolve_update_keys`): a strategy is just the set of column keys it overwrites on conflict: none (ignore), every staged non-key column (replace), or `columns` minus the key (merge).
+- **The staging table** (`schema.py`): `TEMPORARY`, writable columns only, keys kept, a random name cut to the dialect's identifier limit.
+- **The workflow** (`UpsertExecutor.run_on`): `begin_transaction()`, then inside one SAVEPOINT: create the staging table, load it, count conflicts (only when something is updated), run the upsert, drop the staging table. Any error rolls back to the SAVEPOINT and re-raises.
 
-- a strategy class per function, each implementing `apply_strategy()`, the only abstract method;
-- optionally its own executor subclass (`postgres/executor.py`), overriding the hooks:
+**Each backend** holds only what its database does differently, as overrides of `UpsertExecutor`:
 
-  | Hook on `UpsertExecutor` | Override when the backend |
-  | :--- | :--- |
-  | `clone_temp_table()` | needs a different staging table definition |
-  | `cleanup_temp_table_on_failure()` | cleans up differently after a rollback |
-  | `create_temp_table()`, `insert_temp_data()`, `cleanup_temp_table_on_success()` | loads or drops the staging table differently |
+| Hook | Purpose | sqlite | postgres |
+| :--- | :--- | :--- | :--- |
+| `build_upsert(staging)` (abstract) | the one statement that copies the staged rows into the target | `INSERT ... SELECT ... WHERE true ON CONFLICT` | `INSERT ... SELECT ... ON CONFLICT` |
+| `begin_transaction(conn)` | make sure a real transaction is open before the SAVEPOINT | sends `BEGIN IMMEDIATE` when the driver has none | default (nothing) |
 
-  The default hooks fit SQLite, so `sqlite/` has no executor of its own.
+Each backend also owns its three public function modules: the same signatures, each building its executor with a `strategy` and calling `run()`.
 
-**The rule: shared code is only the flow, never the SQL.** When two backends end up with the same helper, move it to `core/` only if it contains no SQL that some other database would need to write differently.
+**The rule:** when backends need different SQL or transaction handling, it is a hook on `UpsertExecutor`, overridden in the backend. Logic is moved to `core/` only once it is identical on every backend.
 
 ---
 
 ## 3. Public API and dependencies
 
-- Users import a backend namespace: `from sqlalchemy_upsert_kit.api import postgres`, then `postgres.insert_or_merge(...)`. There is no function that dispatches on `engine.dialect`; one could be added later as a thin layer without changing the per-backend functions.
-- The runtime dependency is SQLAlchemy alone (`sqlalchemy>=2.0.28`; 2.0.28 added the `preserve_rowcount` option that `postgres/` relies on). The SQLAlchemy dialect modules import without a driver.
-- **Each backend that needs a driver gets its own extra** in `pyproject.toml` (`postgres = ["psycopg[binary]..."]`), and the same driver is added to the `test` extra, so CI, which installs only `--extra test`, can run that backend's tests.
+- Users import a backend namespace: `from sqlalchemy_upsert_kit.api import postgres`, then `postgres.insert_or_merge(...)`. There is no function that dispatches on `engine.dialect`.
+- The runtime dependency is SQLAlchemy alone (`sqlalchemy>=2.0.28`: 2.0.28 added the `preserve_rowcount` execution option the workflow needs to read an `INSERT`'s row count). The SQLAlchemy dialect modules import without a driver.
+- **Each backend that needs a driver gets its own extra** in `pyproject.toml` (`postgres = ["psycopg[binary]..."]`), and the same driver goes into the `test` extra, so CI, which installs only `--extra test`, can run that backend's tests.
 
 ---
 
 ## 4. Why one subpackage per backend
 
-The user chose this design over one module that branches on the dialect, for these reasons:
+The user chose this over one module that branches on the dialect:
 
-- **A change for one database must not ripple into the others.** With one shared module, every fix for one backend risks the rest. With a subpackage each, a backend changes alone, and its tests prove it.
-- **Databases differ in ways that would turn shared code into `if dialect == ...` everywhere.** Found while adding PostgreSQL, against the original SQLite design:
-  - PostgreSQL DDL is transactional; SQLite's `CREATE TABLE` can commit on its own, outside the caller's transaction.
-  - A PostgreSQL `TEMPORARY` table is visible only to its own session, so the SQLite cleanup through a fresh connection cannot see it.
-  - PostgreSQL index names are unique per schema, so cloning a table's indexes into a staging table collides.
-  - MySQL rejects `DELETE ... WHERE pk IN (SELECT ... FROM the same table)` (error 1093, confirmed against MySQL 9.7), which the SQLite replace and merge strategies use, and its `CREATE TABLE` commits the caller's transaction.
-  - Each database has its own native upsert (`ON CONFLICT`, `ON DUPLICATE KEY UPDATE`), which is the right tool once the SQL is per backend.
-- **Duplication now, abstraction later.** Separate backends can be refactored at any time: the user-facing import stays the same, so shared logic is extracted from the backends once it is clearly identical, not designed up front.
+- **A change for one database must not ripple into the others.** Each backend changes alone, and its own test folder proves it.
+- **Databases differ in ways that turn shared code into `if dialect == ...`.** Found while adding PostgreSQL: SQLite's driver delays `BEGIN`, PostgreSQL's does not; their `ON CONFLICT` syntax differs (SQLite needs `WHERE true`); MySQL has no `ON CONFLICT` at all (`ON DUPLICATE KEY UPDATE`), and its `CREATE TABLE` (though not `CREATE TEMPORARY TABLE`) commits the caller's transaction.
+- **Duplication first, abstraction once it is clearly identical.** The user's words: keep the backends apart, and extract shared logic later, since the user-facing import never changes.
+
+## 5. Why the shared part grew (0.2 refactor)
+
+The first PostgreSQL version kept the SQLite design (regular staging table cloned with `Table.to_metadata`, delete then insert for replace and merge, cleanup through a fresh connection) and added its own strategies. A review then found bugs in the SQLite design (foreign keys and named indexes broke the clone, a missing primary key overwrote rows, staging tables leaked) and contract divergences between the backends. The fix made both backends use a native `INSERT ... SELECT ... ON CONFLICT` and the same SAVEPOINT workflow, at which point the strategies, validation and staging table were identical, so, by the rule in section 2, they moved to `core/`.

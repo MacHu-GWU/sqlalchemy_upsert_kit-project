@@ -1,45 +1,38 @@
 ---
-description: "How the three strategies behave on PostgreSQL (sqlalchemy_upsert_kit/postgres/): the temporary staging table and what it does not copy, in-place updates through ON CONFLICT and how they differ from SQLite, the transactional cleanup, the row counts, and the dropped test flags. Behavior only; the code is the source of truth for how. Read before changing the postgres backend, or when a PostgreSQL upsert behaves differently from the SQLite one."
+description: "How the upsert behaves on PostgreSQL (sqlalchemy_upsert_kit/postgres/): transactional DDL and the SAVEPOINT, an already aborted caller transaction, the native upsert and its row counts under concurrency, identifier length, and what is untested. Behavior only; the code is the source of truth for how. Read before changing the postgres backend, or when a PostgreSQL upsert's counts or transaction state look wrong."
 ---
 
 # Backend: PostgreSQL
 
-This file describes behavior, which does not change when the code is refactored. For how it is implemented, read `sqlalchemy_upsert_kit/postgres/executor.py` and the strategy modules beside it; that code is the source of truth, and nothing here repeats it.
+This file describes behavior, which does not change when the code is refactored. For how it is implemented, read `sqlalchemy_upsert_kit/postgres/executor.py`; that code is the source of truth, and nothing here repeats it.
 
 The driver is psycopg 3 (the `postgres` extra). The backend is tested against PostgreSQL 18 locally and against the PostgreSQL preinstalled on the CI runner images (16 on Ubuntu, 17 on Windows).
 
 ---
 
-## 1. Staging table
+## 1. Transactions
 
-- A **`TEMPORARY` table with `ON COMMIT DROP`**: private to the session, so concurrent upserts never collide on its name, and PostgreSQL drops it at commit even if the explicit drop never runs.
-- It copies each column's name, type, primary key, server default and Python default, but **no indexes, unique constraints, foreign keys or sequences**. Copying them would fail: index names are unique per schema, and a temporary table may not reference a permanent one. `test_clone_staging_table_creates_in_postgres` in `tests/postgres/test_postgres_executor.py` proves a table with all of these clones and creates cleanly.
-- It lives in the session's `pg_temp` schema, so reflecting the default schema does not see it. To look for leftovers, query `pg_class` (as `DataFaker.check_no_temp_tables` does).
-
----
-
-## 2. The three strategies
-
-All three write the target with **one native `INSERT ... SELECT ... ON CONFLICT (<primary key>)`** statement:
-
-| Strategy | Conflicting rows | Difference from SQLite |
-| :--- | :--- | :--- |
-| `insert_or_ignore` | left untouched (`DO NOTHING`) | none |
-| `insert_or_replace` | **updated in place**: every non-key column (`DO UPDATE`) | no delete: delete triggers and `ON DELETE` foreign key actions never fire. A table with only the key column has nothing to update, so conflicts are left untouched |
-| `insert_or_merge` | **updated in place**: only `columns` (`DO UPDATE`) | no delete, and no second staging table |
-
-The returned counts: `rowcount` of `DO UPDATE` counts inserted plus updated rows, and that of `DO NOTHING` counts inserted rows only, so the conflicting rows are counted first with a join against the staging table. SQLAlchemy keeps `rowcount` of an `INSERT` only with `preserve_rowcount=True`; without it the count is -1.
+- `Connection.begin()` opens a real transaction, and DDL is transactional, so `PostgresUpsertExecutor` keeps the default `begin_transaction` (nothing to do). Rolling back to the SAVEPOINT removes the staging table along with everything else.
+- After a failed call in user-managed mode the caller's transaction is **usable again**: the rollback to the SAVEPOINT clears PostgreSQL's aborted state. The contract's `test_failure_in_user_mode` retries and commits in the same transaction.
+- If the caller's transaction is **already aborted** before the call, the SAVEPOINT itself fails with `InFailedSqlTransaction`, and the call changes nothing (found in review; no test).
 
 ---
 
-## 3. Transactions and cleanup
+## 2. The upsert statement and its counts
 
-- PostgreSQL DDL is transactional. The staging table is created inside the operation's transaction, so a rollback removes it, and the failure path only forgets it from the `MetaData` (`PostgresUpsertExecutor.cleanup_temp_table_on_failure`), without a fresh connection.
-- In user-managed mode, if the caller catches the error and goes on in the same transaction, the staging table still exists until the commit (`ON COMMIT DROP`) or rollback. A second call with the same `temp_table_name` in that transaction would then fail on the name (this follows from `ON COMMIT DROP`; no test covers it).
-- The known SQLite leak does not happen here.
+- One native `INSERT ... SELECT ... ON CONFLICT (<pk>) DO NOTHING | DO UPDATE`. Conflicting rows are updated in place: update triggers fire, delete triggers and `ON DELETE` foreign key actions never do.
+- `DO NOTHING`'s row count is exactly the inserted rows, so ignore's counts are always exact. `DO UPDATE` counts inserted and updated rows together, so replace and merge count the conflicts with a join first. Under PostgreSQL's default `READ COMMITTED`, **if another transaction inserts the same keys between the count and the upsert, the split between conflicting and inserted can be off**; their sum is always `len(values)`, and the resulting rows are always right. The contract's `test_concurrent_calls` asserts only the sum and the rows for that reason.
 
 ---
 
-## 4. Test flags
+## 3. Names
 
-PostgreSQL has no delete step and no merge staging table, so its functions take only four `_raise_on_*` flags: `_raise_on_temp_table_create`, `_raise_on_temp_data_insert`, `_raise_on_target_insert`, `_raise_on_temp_table_drop`.
+- Identifiers are limited to 63 characters. The generated staging name, `temp_<8 hex>_<table>`, is cut to `engine.dialect.max_identifier_length`; `test_long_table_name` uses a 61-character table.
+- A temporary table shadows a permanent one of the same name in `search_path`, which made a `temp_table_name` equal to the target's silently lose data. The executor now rejects that name on every backend.
+
+---
+
+## 4. Not tested
+
+- Tables in a non-default schema, and connections with a custom `search_path` (a review probe found schemas work).
+- Callers at the `REPEATABLE READ` or `SERIALIZABLE` isolation level.
