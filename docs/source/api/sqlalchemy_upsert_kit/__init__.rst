@@ -11,6 +11,7 @@ sub packages and modules
     :maxdepth: 1
 
     core <core/__init__>
+    mysql <mysql/__init__>
     postgres <postgres/__init__>
     sqlite <sqlite/__init__>
     api <api>

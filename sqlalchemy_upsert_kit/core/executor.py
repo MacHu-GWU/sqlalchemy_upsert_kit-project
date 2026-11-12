@@ -10,18 +10,25 @@ on one connection::
     SAVEPOINT
       create the staging table     # TEMPORARY, private to the connection
       load the records into it
-      count the conflicting rows
+      check_unique_keys()          # backend hook: nothing by default
+      count the conflicting rows   # when rowcount cannot tell them apart
       INSERT ... SELECT ... ON CONFLICT   # backend hook: build_upsert()
-      drop the staging table
-    RELEASE SAVEPOINT              # on error: ROLLBACK TO SAVEPOINT, then re-raise
+      drop_staging()               # backend hook
+    RELEASE SAVEPOINT              # on error: ROLLBACK TO SAVEPOINT,
+                                   # cleanup_after_rollback(), then re-raise
 
-Rolling back to the savepoint undoes everything the upsert did, the staging
-table included, and leaves the caller's transaction usable. In auto-managed
-mode the executor opens and commits its own connection and transaction; in
-user-managed mode it runs on the caller's connection and never commits.
+Rolling back to the savepoint undoes everything the upsert did, and leaves the
+caller's transaction usable. In auto-managed mode the executor opens and
+commits its own connection and transaction; in user-managed mode it runs on
+the caller's connection and never commits.
 
-A backend subclasses :class:`UpsertExecutor` and implements :meth:`build_upsert`,
-plus :meth:`begin_transaction` if its driver delays ``BEGIN``.
+A backend subclasses :class:`UpsertExecutor` and implements :meth:`build_upsert`.
+It overrides the other hooks only where its database differs: a driver that
+delays ``BEGIN`` (:meth:`begin_transaction`), DDL that commits or is not undone
+by a rollback (:meth:`drop_staging`, :meth:`cleanup_after_rollback`), a wrong
+identifier limit (:meth:`max_identifier_length`), a row count that does not
+tell inserted rows apart (:attr:`rowcount_counts_inserts`), or an upsert that
+does not reject other unique key conflicts (:meth:`check_unique_keys`).
 """
 
 import typing as T
@@ -82,6 +89,12 @@ class UpsertExecutor(abc.ABC):
     update_keys: list[str] = dataclasses.field(init=False)
     # fmt: on
 
+    #: True when the upsert's row count is exact: inserted rows only for
+    #: ``DO NOTHING``, inserted plus updated rows for ``DO UPDATE``. A backend
+    #: whose row count is not sets it to False; the conflicting rows are then
+    #: always counted first, and the rest of the records are the inserted rows.
+    rowcount_counts_inserts: T.ClassVar[bool] = True
+
     def __post_init__(self):
         if (self.conn is None) != (self.trans is None):
             raise ValueError(
@@ -107,7 +120,7 @@ class UpsertExecutor(abc.ABC):
         if self.temp_table_name is None:
             self.temp_table_name = make_staging_name(
                 table=self.table,
-                max_length=self.engine.dialect.max_identifier_length,
+                max_length=self.max_identifier_length(),
             )
         if self.temp_table_name == self.table.name:
             raise ValueError("temp_table_name must differ from the target table name")
@@ -118,6 +131,13 @@ class UpsertExecutor(abc.ABC):
         True when the upsert runs in the caller's transaction.
         """
         return self.conn is not None
+
+    def max_identifier_length(self) -> int:
+        """
+        The longest table name the database accepts, which the generated staging
+        name is cut to. The default is the dialect's limit.
+        """
+        return self.engine.dialect.max_identifier_length
 
     def begin_transaction(self, conn: sa.Connection) -> None:
         """
@@ -134,6 +154,27 @@ class UpsertExecutor(abc.ABC):
         when it is empty).
         """
         raise NotImplementedError
+
+    def check_unique_keys(self, conn: sa.Connection, staging: sa.Table) -> None:
+        """
+        Raise before the upsert if the staged records would break a unique key
+        other than the primary key. The default does nothing: an
+        ``ON CONFLICT (<pk>)`` upsert raises such errors itself.
+        """
+
+    def drop_staging(self, conn: sa.Connection, staging: sa.Table) -> None:
+        """
+        Drop the staging table after the upsert, inside the SAVEPOINT, without
+        committing the transaction.
+        """
+        staging.drop(conn)
+
+    def cleanup_after_rollback(self, conn: sa.Connection, staging: sa.Table) -> None:
+        """
+        Called after a failure rolled back to the SAVEPOINT, before the error is
+        re-raised. The default does nothing: the rollback removes the staging
+        table on databases whose DDL is transactional.
+        """
 
     def maybe_fail(self, step: str) -> None:
         """
@@ -170,7 +211,8 @@ class UpsertExecutor(abc.ABC):
                 staging.create(conn)
                 self.maybe_fail("load_staging")
                 conn.execute(staging.insert(), self.values)
-                if self.update_keys:
+                self.check_unique_keys(conn, staging)
+                if self.update_keys or not self.rowcount_counts_inserts:
                     # DO UPDATE's rowcount counts inserted and updated rows
                     # together, so count the conflicts first. If another
                     # transaction writes the same keys in between, the split
@@ -180,14 +222,19 @@ class UpsertExecutor(abc.ABC):
                 stmt = self.build_upsert(staging)
                 # SQLAlchemy keeps the rowcount of an INSERT only when asked to.
                 res = conn.execute(stmt.execution_options(preserve_rowcount=True))
-                if self.update_keys:
+                if not self.rowcount_counts_inserts:
+                    inserted = len(self.values) - conflicts
+                elif self.update_keys:
                     inserted = res.rowcount - conflicts
                 else:
                     # DO NOTHING's rowcount is exactly the inserted rows.
                     inserted = res.rowcount
                     conflicts = len(self.values) - inserted
                 self.maybe_fail("drop_staging")
-                staging.drop(conn)
+                self.drop_staging(conn, staging)
+        except Exception:
+            self.cleanup_after_rollback(conn, staging)
+            raise
         finally:
             self.metadata.remove(staging)
         return conflicts, inserted

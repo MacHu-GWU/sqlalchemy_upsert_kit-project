@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from sqlalchemy_upsert_kit.exc import UpsertTestError
+from sqlalchemy_upsert_kit.exc import UniqueKeyConflictError
 
 import pytest
 
@@ -9,6 +10,10 @@ def test_upsert_test_error():
     with pytest.raises(UpsertTestError, match="boom"):
         raise UpsertTestError("boom")
     assert issubclass(UpsertTestError, Exception)
+
+
+def test_unique_key_conflict_error():
+    assert issubclass(UniqueKeyConflictError, Exception)
 
 
 if __name__ == "__main__":

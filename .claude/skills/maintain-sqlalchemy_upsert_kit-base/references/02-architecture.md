@@ -11,19 +11,20 @@ description: "The package architecture: what lives in sqlalchemy_upsert_kit/core
 ```text
 sqlalchemy_upsert_kit/
 ├── core/
-│   ├── schema.py       # get_pk_column, get_writable_columns, make_staging_name, make_staging_table
+│   ├── schema.py       # get_pk_column, get_writable_columns, get_unique_keys, make_staging_name, make_staging_table
 │   ├── validation.py   # validate_records, resolve_update_keys
 │   └── executor.py     # UpsertExecutor: the workflow; FAIL_STEPS
-├── exc.py              # UpsertTestError, raised by the _fail_at test hook
+├── exc.py              # UpsertTestError (the _fail_at test hook), UniqueKeyConflictError
 ├── sqlite/
 │   ├── executor.py     # SqliteUpsertExecutor
 │   ├── insert_or_ignore.py / insert_or_replace.py / insert_or_merge.py   # the public functions
 │   └── api.py          # exposed as api.sqlite
 ├── postgres/           # the same files: PostgresUpsertExecutor, api.postgres
+├── mysql/              # the same files: MysqlUpsertExecutor, api.mysql
 └── api.py              # one line per backend: from .<engine> import api as <engine>
 ```
 
-- The subpackage name is the backend name used everywhere else: the local database mise tasks, the test folder `tests/<engine>/`, and the `pyproject.toml` extra. PostgreSQL's is `postgres`; its mise tasks use the shorter `psql`.
+- The subpackage name is the backend name used everywhere else: the local database mise tasks, the test folder `tests/<engine>/`, and the `pyproject.toml` extra. PostgreSQL's is `postgres`, and its mise tasks use the shorter `psql`; MySQL's is `mysql` everywhere.
 - **A backend's `__init__.py` imports nothing**, and users import from `api`. Importing SQLAlchemy while coverage starts breaks SQLAlchemy 2.1 statement compilation (`'InternalTraversal' object is not callable`; 2.0.44 is fine). A per-module coverage run (`run_cov_test` with `module="sqlalchemy_upsert_kit.sqlite.insert_or_ignore"`) makes coverage import the parent package at start, so a parent that imports SQLAlchemy breaks that run.
 
 ---
@@ -35,14 +36,19 @@ sqlalchemy_upsert_kit/
 - **Validation** (`validation.py`): records and `columns` are checked before any SQL runs, so bad input fails the same way on every backend.
 - **Strategy semantics** (`resolve_update_keys`): a strategy is just the set of column keys it overwrites on conflict: none (ignore), every staged non-key column (replace), or `columns` minus the key (merge).
 - **The staging table** (`schema.py`): `TEMPORARY`, writable columns only, keys kept, a random name cut to the dialect's identifier limit.
-- **The workflow** (`UpsertExecutor.run_on`): `begin_transaction()`, then inside one SAVEPOINT: create the staging table, load it, count conflicts (only when something is updated), run the upsert, drop the staging table. Any error rolls back to the SAVEPOINT and re-raises.
+- **The workflow** (`UpsertExecutor.run_on`): `begin_transaction()`, then inside one SAVEPOINT: create the staging table, load it, `check_unique_keys()`, count conflicts (when something is updated, or the row count cannot tell inserted rows apart), run the upsert, `drop_staging()`. Any error rolls back to the SAVEPOINT, calls `cleanup_after_rollback()`, and re-raises.
 
 **Each backend** holds only what its database does differently, as overrides of `UpsertExecutor`:
 
-| Hook | Purpose | sqlite | postgres |
+| Hook | Purpose | Default | Overridden by |
 | :--- | :--- | :--- | :--- |
-| `build_upsert(staging)` (abstract) | the one statement that copies the staged rows into the target | `INSERT ... SELECT ... WHERE true ON CONFLICT` | `INSERT ... SELECT ... ON CONFLICT` |
-| `begin_transaction(conn)` | make sure a real transaction is open before the SAVEPOINT | sends `BEGIN IMMEDIATE` when the driver has none | default (nothing) |
+| `build_upsert(staging)` (abstract) | the one statement that copies the staged rows into the target | none | sqlite: `INSERT ... SELECT ... WHERE true ON CONFLICT`; postgres: `INSERT ... SELECT ... ON CONFLICT`; mysql: `INSERT ... SELECT ... ON DUPLICATE KEY UPDATE` |
+| `begin_transaction(conn)` | make sure a real transaction is open before the SAVEPOINT | nothing | sqlite: `BEGIN IMMEDIATE` when the driver has none |
+| `max_identifier_length()` | the limit the generated staging name is cut to | the dialect's | mysql: 64 (the dialect says 255) |
+| `check_unique_keys(conn, staging)` | reject records that break a unique key other than the primary key | nothing (the upsert raises) | mysql: two queries per unique key |
+| `rowcount_counts_inserts` (class attribute) | whether the upsert's row count is exact; if False, conflicts are always counted first | True | mysql: False (`CLIENT_FOUND_ROWS`) |
+| `drop_staging(conn, staging)` | drop the staging table without committing | `Table.drop()` | mysql: `DROP TEMPORARY TABLE` |
+| `cleanup_after_rollback(conn, staging)` | after a failure, remove what the rollback did not | nothing | mysql: `DROP TEMPORARY TABLE IF EXISTS` |
 
 Each backend also owns its three public function modules: the same signatures, each building its executor with a `strategy` and calling `run()`.
 
@@ -63,7 +69,7 @@ Each backend also owns its three public function modules: the same signatures, e
 The user chose this over one module that branches on the dialect:
 
 - **A change for one database must not ripple into the others.** Each backend changes alone, and its own test folder proves it.
-- **Databases differ in ways that turn shared code into `if dialect == ...`.** Found while adding PostgreSQL: SQLite's driver delays `BEGIN`, PostgreSQL's does not; their `ON CONFLICT` syntax differs (SQLite needs `WHERE true`); MySQL has no `ON CONFLICT` at all (`ON DUPLICATE KEY UPDATE`), and its `CREATE TABLE` (though not `CREATE TEMPORARY TABLE`) commits the caller's transaction.
+- **Databases differ in ways that turn shared code into `if dialect == ...`.** Found while adding PostgreSQL: SQLite's driver delays `BEGIN`, PostgreSQL's does not; their `ON CONFLICT` syntax differs (SQLite needs `WHERE true`). Found while adding MySQL: it has no `ON CONFLICT` at all (`ON DUPLICATE KEY UPDATE`, which fires on any unique key), its temporary table DDL is not rolled back and a plain `DROP TABLE` commits, its row count cannot tell inserted rows apart, and its dialect overstates the identifier limit. Each became a hook in section 2, not a branch in `core/`.
 - **Duplication first, abstraction once it is clearly identical.** The user's words: keep the backends apart, and extract shared logic later, since the user-facing import never changes.
 
 ## 5. Why the shared part grew (0.2 refactor)

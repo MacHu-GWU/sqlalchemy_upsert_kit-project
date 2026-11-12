@@ -70,7 +70,8 @@ t_pk_only = sa.Table(
     sa.Column("id", sa.Integer, primary_key=True, autoincrement=False),
 )
 
-# 61 characters: a staging name built from it must be cut to fit PostgreSQL's 63.
+# 61 characters: a staging name built from it must be cut to fit PostgreSQL's 63
+# and MySQL's 64.
 t_long = sa.Table(
     "t" + "_long_name" * 6,
     metadata,
@@ -161,8 +162,19 @@ def staging_tables(conn: sa.Connection) -> list[str]:
     """
     Staging tables visible on ``conn``: its own temporary tables, plus any
     permanent table whose name starts with ``temp_``.
+
+    MySQL cannot list one connection's temporary tables: its branch lists every
+    connection's, under internal names (``#sql...``). That is the same as long
+    as no other connection to the test database holds one, which is true while
+    the tests run one at a time.
     """
-    if conn.dialect.name == "postgresql":
+    if conn.dialect.name == "mysql":
+        sql = (
+            "SELECT NAME FROM information_schema.INNODB_TEMP_TABLE_INFO "
+            "UNION ALL SELECT TABLE_NAME FROM information_schema.TABLES "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'temp\\_%'"
+        )
+    elif conn.dialect.name == "postgresql":
         sql = (
             "SELECT relname FROM pg_class WHERE relkind = 'r' AND ("
             "relnamespace = pg_my_temp_schema() OR relname LIKE 'temp\\_%')"
@@ -348,6 +360,97 @@ class StrategyContract:
         assert read_rows(engine, t_rich) == [row_a, row_b, row_c]
         assert_no_staging(engine)
 
+    # --- unique keys other than the primary key -----------------------------------
+    @pytest.mark.parametrize("mode", ["auto", "user"])
+    def test_unique_key_taken_by_existing_row(self, engine, mode):
+        """
+        A new record whose ``label`` (a unique key) an existing row already has
+        is an error, never an update of that row, and the call changes nothing.
+        In user mode the caller's transaction stays usable.
+        """
+        values = [
+            {"code": "C", "sel": "s3", "label": "lc"},
+            {"code": "Z", "sel": "sz", "label": "la"},
+        ]
+        rows_before = read_rows(engine, t_rich)
+        if mode == "auto":
+            with pytest.raises(sa.exc.IntegrityError):
+                self.call(engine, table=t_rich, values=values)
+        else:
+            with engine.connect() as conn:
+                with conn.begin() as trans:
+                    with pytest.raises(sa.exc.IntegrityError):
+                        self.call(
+                            engine, table=t_rich, values=values, conn=conn, trans=trans
+                        )
+                    assert staging_tables(conn) == []
+                    assert read_rows(conn, t_rich) == rows_before
+                    assert self.call(engine, conn=conn, trans=trans) == (2, 1)
+            assert read_rows(engine) == EXPECTED_ROWS[self.strategy]
+        assert read_rows(engine, t_rich) == rows_before
+        assert_no_staging(engine)
+
+    def test_unique_key_shared_by_records(self, engine):
+        """
+        Two new records with the same ``label`` are an error.
+        """
+        values = [
+            {"code": "Y", "sel": "sy", "label": "lz"},
+            {"code": "Z", "sel": "sz", "label": "lz"},
+        ]
+        rows_before = read_rows(engine, t_rich)
+        with pytest.raises(sa.exc.IntegrityError):
+            self.call(engine, table=t_rich, values=values)
+        assert read_rows(engine, t_rich) == rows_before
+        assert_no_staging(engine)
+
+    def test_unique_key_of_conflicting_record(self, engine):
+        """
+        A conflicting record whose ``label`` another row has is an error only if
+        the strategy writes ``label`` (replace); ignore leaves the row alone,
+        and merge updates only ``sel``.
+        """
+        values = [{"code": "B", "sel": "S2", "label": "la"}]
+        rows_before = read_rows(engine, t_rich)
+        if self.strategy == "replace":
+            with pytest.raises(sa.exc.IntegrityError):
+                self.call(engine, table=t_rich, values=values)
+            assert read_rows(engine, t_rich) == rows_before
+        else:
+            assert self.call(engine, table=t_rich, values=values) == (1, 0)
+            row_b = {
+                "ignore": ("B", "s2", "old", 2, 4, "lb"),
+                "merge": ("B", "S2", "old", 2, 4, "lb"),
+            }[self.strategy]
+            assert read_rows(engine, t_rich) == [rows_before[0], row_b]
+        assert_no_staging(engine)
+
+    def test_unique_key_shared_with_conflicting_record(self, engine):
+        """
+        A conflicting record and a new record with the same ``label``: an error
+        only if the strategy writes ``label`` on the conflicting row (replace).
+        Otherwise the conflicting row keeps its own ``label``, and the new
+        record is inserted with it.
+        """
+        values = [
+            {"code": "B", "sel": "S2", "label": "lz"},
+            {"code": "Z", "sel": "sz", "label": "lz"},
+        ]
+        rows_before = read_rows(engine, t_rich)
+        if self.strategy == "replace":
+            with pytest.raises(sa.exc.IntegrityError):
+                self.call(engine, table=t_rich, values=values)
+            assert read_rows(engine, t_rich) == rows_before
+        else:
+            assert self.call(engine, table=t_rich, values=values) == (1, 1)
+            row_b = {
+                "ignore": ("B", "s2", "old", 2, 4, "lb"),
+                "merge": ("B", "S2", "old", 2, 4, "lb"),
+            }[self.strategy]
+            row_z = ("Z", "sz", "new", 7, 14, "lz")
+            assert read_rows(engine, t_rich) == [rows_before[0], row_b, row_z]
+        assert_no_staging(engine)
+
     def test_foreign_keys(self, engine):
         """
         Upserting a parent never deletes its children (ON DELETE CASCADE),
@@ -387,10 +490,11 @@ class StrategyContract:
             {"id": i, "name": "new", "note": "new"} for i in range(n // 2, n // 2 + n)
         ]
         assert self.call(engine, values=values) == (n // 2, n // 2)
+        # count(CASE ...), not count(*) FILTER (...): MySQL has no FILTER.
         stmt = sa.select(
             sa.func.count(),
-            sa.func.count().filter(t_record.c.name == "new"),
-            sa.func.count().filter(t_record.c.note == "new"),
+            sa.func.count(sa.case((t_record.c.name == "new", 1))),
+            sa.func.count(sa.case((t_record.c.note == "new", 1))),
         )
         with engine.connect() as conn:
             total, new_name, new_note = conn.execute(stmt).one()

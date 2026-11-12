@@ -6,7 +6,7 @@ What this library does: see `README.rst`.
 
 Package: `sqlalchemy_upsert_kit/` (import name `sqlalchemy_upsert_kit`).
 
-Backends: SQLite (`sqlalchemy_upsert_kit/sqlite/`, `api.sqlite`) and PostgreSQL (`sqlalchemy_upsert_kit/postgres/`, `api.postgres`), sharing the workflow in `sqlalchemy_upsert_kit/core/`. No MySQL yet. The PostgreSQL tests need `mise run psql-up` locally.
+Backends: SQLite (`sqlalchemy_upsert_kit/sqlite/`, `api.sqlite`), PostgreSQL (`sqlalchemy_upsert_kit/postgres/`, `api.postgres`) and MySQL (`sqlalchemy_upsert_kit/mysql/`, `api.mysql`), sharing the workflow in `sqlalchemy_upsert_kit/core/`. No MariaDB yet. The PostgreSQL and MySQL tests need `mise run psql-up` and `mise run mysql-up` locally (`mise run test` and `mise run cov` start both).
 
 How to maintain this library: **before changing the package, its tests, its mise tasks, or CI, load `maintain-sqlalchemy_upsert_kit-base`**. To add a database backend, use `maintain-sqlalchemy_upsert_kit-add-backend`.
 

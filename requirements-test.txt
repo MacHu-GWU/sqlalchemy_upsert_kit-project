@@ -8,6 +8,7 @@ prettytable==3.18.0
 psycopg==3.3.8
 psycopg-binary==3.3.8 ; implementation_name != 'pypy'
 pygments==2.21.0
+pymysql==1.2.4
 pytest==9.2.0
 pytest-cov==7.1.0
 sqlalchemy==2.1.8

@@ -3,7 +3,7 @@
 name = "sqlalchemy_upsert_kit"
 # Bump before each release (https://semver.org/), then ``mise run inst`` to update ``uv.lock``.
 version = "0.2.1"
-description = "Fast SQLAlchemy bulk upsert (insert or ignore, replace, or merge) for SQLite and PostgreSQL, using temporary table staging - typically 5-20x faster than row-by-row upserts."
+description = "Fast SQLAlchemy bulk upsert (insert or ignore, replace, or merge) for SQLite, PostgreSQL and MySQL, using temporary table staging - typically 5-20x faster than row-by-row upserts."
 # An SPDX license expression (PEP 639); keep ``LICENSE.txt`` in sync.
 # Read: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license-and-license-files
 # Valid identifiers: https://spdx.org/licenses/
@@ -49,6 +49,11 @@ postgres = [
     "psycopg[binary]>=3.3.8,<4.0.0", # PostgreSQL driver
 ]
 
+# MySQL driver for ``api.mysql``
+mysql = [
+    "PyMySQL>=1.2.4,<2.0.0", # MySQL driver, pure Python
+]
+
 # local development
 dev = [
     "rich>=14.3.4,<15.0.0",
@@ -60,6 +65,7 @@ test = [
     "pytest-cov>=7.1.0,<8.0.0",
     "prettytable>=3.0.0,<4.0.0", # pretty print tables in test output
     "psycopg[binary]>=3.3.8,<4.0.0", # PostgreSQL driver for the postgres tests
+    "PyMySQL>=1.2.4,<2.0.0", # MySQL driver for the mysql tests
 ]
 
 # docs build

@@ -103,6 +103,32 @@ jobs:
           Start-Service -Name $svc.Name
           & "$env:PGBIN\pg_isready.exe" --host=127.0.0.1 --timeout=30
           "SQLALCHEMY_UPSERT_KIT_PG_URL=postgresql+psycopg://postgres:root@127.0.0.1:5432/postgres" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      # The mysql tests need a MySQL server: also the one on the runner image.
+      # Locally, ``mise run mysql-up`` starts a container instead.
+      - name: "Start MySQL (Linux)"
+        if: runner.os == 'Linux'
+        run: |
+          # The image ships MySQL 8.0, disabled; user root, password root.
+          sudo systemctl start mysql.service
+          mysqladmin ping --host=127.0.0.1 --user=root --password=root --wait=30
+          mysql --host=127.0.0.1 --user=root --password=root -e "CREATE DATABASE IF NOT EXISTS test;"
+          echo "SQLALCHEMY_UPSERT_KIT_MYSQL_URL=mysql+pymysql://root:root@127.0.0.1:3306/test" >> "$GITHUB_ENV"
+      - name: "Start MySQL (Windows)"
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # The image installs the MySQL server (bin on PATH) with no service and no
+          # data directory: create one with a passwordless root, then start mysqld.
+          $mysqld = (Get-Command mysqld.exe).Source
+          $datadir = Join-Path $env:RUNNER_TEMP "mysql-data"
+          & $mysqld --initialize-insecure "--datadir=$datadir" --console
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Start-Process -FilePath $mysqld -ArgumentList "--datadir=$datadir", "--port=3306", "--console" -WindowStyle Hidden
+          & mysqladmin ping --host=127.0.0.1 --user=root --wait=30
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & mysql --host=127.0.0.1 --user=root -e "CREATE DATABASE IF NOT EXISTS test;"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "SQLALCHEMY_UPSERT_KIT_MYSQL_URL=mysql+pymysql://root@127.0.0.1:3306/test" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       # Run pytest with coverage reporting. --extra test is a safety net: if uv ever has to rebuild
       # the .venv here, it installs the test extra too, so pytest is never missing.
       - name: "Run pytest"

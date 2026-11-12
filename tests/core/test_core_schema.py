@@ -2,6 +2,7 @@
 
 from sqlalchemy_upsert_kit.core.schema import get_pk_column
 from sqlalchemy_upsert_kit.core.schema import get_writable_columns
+from sqlalchemy_upsert_kit.core.schema import get_unique_keys
 from sqlalchemy_upsert_kit.core.schema import make_staging_name
 from sqlalchemy_upsert_kit.core.schema import make_staging_table
 
@@ -27,6 +28,33 @@ def test_get_pk_column_needs_exactly_one(n_pk):
 
 def test_get_writable_columns():
     assert "total" not in [col.key for col in get_writable_columns(t_rich)]
+
+
+def test_get_unique_keys():
+    """
+    Unique constraints and unique indexes other than the primary key, without
+    repeats, and only those made of writable columns.
+    """
+    assert [[col.key for col in cols] for cols in get_unique_keys(t_rich)] == [
+        ["label"]
+    ]
+    table = sa.Table(
+        "t",
+        sa.MetaData(),
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("a", sa.Integer, unique=True),
+        sa.Column("b", sa.Integer),
+        sa.Column("c", sa.Integer, sa.Computed("b * 2")),
+        sa.UniqueConstraint("a", "b"),
+        sa.UniqueConstraint("id"),  # the primary key again
+        sa.UniqueConstraint("c"),  # a generated column
+    )
+    sa.Index("ix_t_a", table.c.a, unique=True)  # the same key as unique=True
+    sa.Index("ix_t_b", table.c.b, unique=True)
+    sa.Index("ix_t_b_lower", sa.func.abs(table.c.b), unique=True)  # an expression
+    sa.Index("ix_t_c", table.c.c)  # not unique
+    keys = sorted([col.key for col in cols] for cols in get_unique_keys(table))
+    assert keys == [["a"], ["a", "b"], ["b"]]
 
 
 def test_make_staging_name():

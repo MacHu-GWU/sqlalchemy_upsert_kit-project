@@ -2,3 +2,4 @@
 
 from .sqlite import api as sqlite
 from .postgres import api as postgres
+from .mysql import api as mysql

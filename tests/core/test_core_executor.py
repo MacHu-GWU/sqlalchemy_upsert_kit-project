@@ -59,6 +59,29 @@ def test_run_ignore_counts(engine):
     assert new_executor(engine, strategy="ignore").run() == (2, 1)
 
 
+class CountFirstExecutor(SqliteUpsertExecutor):
+    """
+    A backend whose row count cannot be trusted, such as MySQL.
+    """
+
+    rowcount_counts_inserts = False
+
+
+@pytest.mark.parametrize("strategy", ["ignore", "replace"])
+def test_run_counts_conflicts_first(engine, strategy):
+    executor = CountFirstExecutor(
+        engine=engine, table=t_record, values=INPUT, strategy=strategy
+    )
+    assert executor.run() == (2, 1)
+    assert read_rows(engine) == EXPECTED_ROWS[strategy]
+
+
+def test_default_hooks(engine):
+    executor = new_executor(engine)
+    assert executor.max_identifier_length() == engine.dialect.max_identifier_length
+    assert UpsertExecutor.rowcount_counts_inserts is True
+
+
 def test_run_empty_values(engine):
     assert new_executor(engine, values=[]).run() == (0, 0)
 

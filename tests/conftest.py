@@ -28,6 +28,27 @@ PG_URL = (
 # this environment variable to its URL instead.
 ENV_PG_URL = "SQLALCHEMY_UPSERT_KIT_PG_URL"
 
+# ------------------------------------------------------------------------------
+# Local MySQL test container, started by ``mise run mysql-up``.
+#
+# ``.mise/tasks/mysql.py`` reads the literal values below with ``ast``,
+# so keep each one a plain literal assignment.
+# ------------------------------------------------------------------------------
+MYSQL_IMAGE = "docker.io/library/mysql:8.4"
+MYSQL_CONTAINER_NAME = "sqlalchemy_upsert_kit-mysql"
+MYSQL_HOST = "127.0.0.1"
+MYSQL_PORT = 43306  # unusual port, so it does not clash with a local MySQL on 3306
+MYSQL_USER = "root"
+MYSQL_PASSWORD = "password"
+MYSQL_DATABASE = "test"
+MYSQL_URL = (
+    f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}"
+    f"@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}"
+)
+# CI has no container: it starts the runner's preinstalled MySQL and sets
+# this environment variable to its URL instead.
+ENV_MYSQL_URL = "SQLALCHEMY_UPSERT_KIT_MYSQL_URL"
+
 
 @pytest.fixture(autouse=True)
 def ensure_newline_before_test_output():
@@ -41,6 +62,14 @@ def pg_url() -> str:
     SQLAlchemy URL of the PostgreSQL test database.
     """
     return os.environ.get(ENV_PG_URL, PG_URL)
+
+
+@pytest.fixture(scope="session")
+def mysql_url() -> str:
+    """
+    SQLAlchemy URL of the MySQL test database.
+    """
+    return os.environ.get(ENV_MYSQL_URL, MYSQL_URL)
 
 
 def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):

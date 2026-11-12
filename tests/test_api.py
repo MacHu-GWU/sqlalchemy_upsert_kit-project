@@ -13,6 +13,10 @@ def test():
     _ = api.postgres.insert_or_ignore
     _ = api.postgres.insert_or_replace
     _ = api.postgres.insert_or_merge
+    _ = api.mysql
+    _ = api.mysql.insert_or_ignore
+    _ = api.mysql.insert_or_replace
+    _ = api.mysql.insert_or_merge
 
 
 if __name__ == "__main__":

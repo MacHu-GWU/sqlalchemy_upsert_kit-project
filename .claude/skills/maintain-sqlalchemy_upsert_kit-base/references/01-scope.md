@@ -24,7 +24,7 @@ Each backend exposes the same three functions in `sqlalchemy_upsert_kit/<engine>
 | `insert_or_replace` | overwrite every column with the record; a column the records leave out is reset to its default, or NULL | insert | `(replaced_rows, inserted_rows)` |
 | `insert_or_merge` | overwrite only the columns named in `columns`, keep the rest | insert | `(updated_rows, inserted_rows)` |
 
-These semantics are the contract: the same resulting rows and counts on every backend. Conflicting rows are updated in place on every backend, so update triggers fire, and delete triggers and `ON DELETE` foreign key actions never do.
+These semantics are the contract: the same resulting rows and counts on every backend. Conflicting rows are updated in place on every backend, so update triggers fire, and delete triggers and `ON DELETE` foreign key actions never do. One documented exception: on MySQL, `insert_or_ignore` also fires the update triggers of conflicting rows, though their values never change (MySQL has no `DO NOTHING`).
 
 ---
 
@@ -32,6 +32,7 @@ These semantics are the contract: the same resulting rows and counts on every ba
 
 - **Public parameters** are the same in every backend: `engine`, `table`, `values`, `columns` (merge only, required), `metadata`, `temp_table_name`, `conn`, `trans`. A user switches backend by switching the `api.<engine>` namespace and nothing else.
 - **One primary key column** (`get_pk_column` in `sqlalchemy_upsert_kit/core/schema.py`). Conflicts are detected on that key only.
+- **A conflict on any other unique key is an error,** never an update: a new record whose unique value an existing row has, or records that write the same unique value, raise `sqlalchemy.exc.IntegrityError`, and the call changes nothing. SQLite and PostgreSQL raise it themselves; a backend whose upsert would update the other row instead (MySQL) checks before the upsert. The user's rule: such records are invalid data for an upsert.
 - **Records are keyed by column key**, not column name, and all must have the same keys.
 - **Bad input raises `ValueError` before any SQL runs** (`sqlalchemy_upsert_kit/core/validation.py` and `UpsertExecutor.__post_init__`): a key that is not a writable column (generated columns are not writable), a missing, None or repeated primary key, records with different keys, merge `columns` that are empty, unknown, or not keys of the records, a `conn` without `trans` or the reverse, and a `temp_table_name` equal to the target's name. Merge `columns` that name only the primary key update nothing.
 - **Empty `values` is a no-op** that returns `(0, 0)`, after the argument checks.

@@ -32,6 +32,42 @@ def get_writable_columns(table: sa.Table) -> list[sa.Column]:
     return [col for col in table.columns if col.computed is None]
 
 
+def get_unique_keys(table: sa.Table) -> list[list[sa.Column]]:
+    """
+    Return the column lists of every unique key of ``table`` other than its
+    primary key: each ``UniqueConstraint`` (``Column(unique=True)`` makes one)
+    and each unique ``Index``, in table definition order, without repeats.
+
+    Only keys whose parts are all writable columns are returned: an index on an
+    expression, or a key that includes a generated column, has no values in the
+    staging table to check.
+    """
+    pk_keys = {col.key for col in table.primary_key.columns}
+    writable = set(get_writable_columns(table))
+    candidates = [
+        list(con.columns)
+        for con in table.constraints
+        if isinstance(con, sa.UniqueConstraint)
+        and not isinstance(con, sa.PrimaryKeyConstraint)
+    ]
+    candidates += [
+        list(index.expressions)
+        for index in sorted(table.indexes, key=lambda index: index.name or "")
+        if index.unique
+    ]
+    keys = list()
+    seen = set()
+    for cols in candidates:
+        if not all(isinstance(col, sa.Column) and col in writable for col in cols):
+            continue
+        key_set = frozenset(col.key for col in cols)
+        if key_set == pk_keys or key_set in seen:
+            continue
+        seen.add(key_set)
+        keys.append(cols)
+    return keys
+
+
 def make_staging_name(
     table: sa.Table,
     max_length: int,
